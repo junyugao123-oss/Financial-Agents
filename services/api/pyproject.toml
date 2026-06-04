@@ -1,0 +1,36 @@
+[project]
+name = "junyu-research-api"
+version = "0.1.0"
+description = "Lightweight MVP API for 君宇·投研智能体"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.122.0",
+    "uvicorn[standard]>=0.38.0",
+    "pydantic-settings>=2.12.0",
+    "apscheduler>=3.11.0",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.2.0",
+    "akshare>=1.18.0",
+    "yfinance>=0.2.60",
+    "pandas>=2.3.0",
+    "pandas-ta-classic>=0.6.20"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.14.0"
+]
+
+[build-system]
+requires = ["setuptools>=80.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

@@ -1,0 +1,33 @@
+{
+  "name": "@junyu/web",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0 --port 3000",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0 --port 3000",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.17",
+    "clsx": "^2.1.1",
+    "jspdf": "^4.2.1",
+    "lightweight-charts": "^5.2.0",
+    "lucide-react": "^0.555.0",
+    "motion": "^12.23.24",
+    "next": "^16.0.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.5.0",
+    "tailwindcss": "^4.1.17"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "^16.0.5",
+    "typescript": "^5.9.3"
+  }
+}

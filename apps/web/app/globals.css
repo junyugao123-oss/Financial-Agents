@@ -1,0 +1,417 @@
+@import "tailwindcss";
+
+:root {
+  --bg: oklch(0.975 0.006 220);
+  --bg-soft: oklch(0.95 0.01 220);
+  --surface: oklch(0.995 0.002 220);
+  --surface-strong: oklch(0.92 0.012 220);
+  --ink: oklch(0.22 0.02 230);
+  --ink-muted: oklch(0.45 0.025 230);
+  --ink-soft: oklch(0.58 0.025 230);
+  --line: oklch(0.84 0.018 220);
+  --teal: oklch(0.44 0.09 190);
+  --teal-strong: oklch(0.34 0.09 190);
+  --steel: oklch(0.42 0.07 235);
+  --gold: oklch(0.65 0.12 82);
+  --green: oklch(0.48 0.11 155);
+  --red: oklch(0.52 0.12 25);
+  --shadow: 0 8px 24px oklch(0.2 0.03 230 / 0.09);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  max-width: 100%;
+}
+
+html:has(.home-snap) {
+  min-height: 100%;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+}
+
+body:has(.home-snap) {
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+html:has(.session-pages) {
+  scroll-padding-top: 0;
+  scroll-snap-type: none;
+}
+
+html:has(.session-root),
+body:has(.session-root) {
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  background:
+    linear-gradient(180deg, var(--bg) 0%, oklch(0.955 0.008 220) 58%, var(--bg) 100%);
+  color: var(--ink);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  letter-spacing: 0;
+  line-break: strict;
+  overflow-wrap: break-word;
+  word-break: auto-phrase;
+}
+
+:where(h1, h2, h3, h4, p, li, a, button, label, span) {
+  line-break: strict;
+  text-wrap: pretty;
+}
+
+:where(h1, h2, h3) {
+  text-wrap: balance;
+}
+
+.zh-keep-phrase {
+  line-break: strict;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: oklch(0.82 0.08 190);
+}
+
+.container-shell {
+  width: min(1180px, calc(100vw - 32px));
+  margin: 0 auto;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.subtle-shadow {
+  box-shadow: var(--shadow);
+}
+
+.disclosure-strip {
+  border-top: 1px solid var(--line);
+  background: oklch(0.945 0.012 220);
+  color: var(--ink-muted);
+}
+
+.text-clamp-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.text-clamp-3 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.decision-step-body {
+  display: none;
+}
+
+@media (min-width: 1800px) and (min-height: 1100px) {
+  .decision-step-body {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+}
+
+.home-snap {
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+.home-page {
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.home-page-panel {
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+@media (min-width: 901px) {
+  .home-page {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .home-page-panel {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+.home-hero-panel {
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+.session-root {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  overflow: visible;
+  padding-top: env(safe-area-inset-top);
+  background: var(--bg);
+}
+
+.session-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: visible;
+  padding: 16px 0 calc(28px + env(safe-area-inset-bottom));
+}
+
+.session-workbench {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 280px;
+  gap: 16px;
+  align-items: start;
+}
+
+.session-sidebar,
+.session-report-rail {
+  position: sticky;
+  top: 16px;
+  min-height: 0;
+}
+
+.session-mainflow {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.session-pages {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1280px) {
+  .session-workbench {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .session-report-rail {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .session-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .session-sidebar {
+    position: static;
+  }
+}
+
+.session-page {
+  display: flex;
+  height: 100%;
+  min-height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  scroll-margin-top: 0;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  flex-direction: column;
+  justify-content: stretch;
+}
+
+.session-page > * {
+  width: 100%;
+}
+
+.session-page:first-child {
+  min-height: 100%;
+}
+
+.session-page-panel {
+  height: 100%;
+  max-height: none;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hero-image {
+  background-image:
+    linear-gradient(90deg, oklch(0.14 0.015 230 / 0.88), oklch(0.18 0.02 230 / 0.48), transparent),
+    url("/images/decision-room-hero.png");
+  background-position: center;
+  background-size: cover;
+}
+
+.thinking-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 0.35rem;
+  color: var(--teal-strong);
+  font-size: 0.86em;
+  font-weight: 600;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.thinking-inline-text {
+  margin-right: 1px;
+}
+
+.thinking-dot {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.32;
+  animation: thinking-dot 1.05s ease-in-out infinite;
+}
+
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+.thinking-dot:nth-child(4) {
+  animation-delay: 0.32s;
+}
+
+@keyframes thinking-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.32;
+    transform: translateY(0);
+  }
+
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .thinking-dot {
+    opacity: 0.75;
+    transform: none;
+  }
+}
+
+@media print {
+  header,
+  aside,
+  .disclosure-strip,
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .container-shell {
+    width: 100% !important;
+  }
+
+  .session-pages {
+    scroll-snap-type: none;
+    height: auto;
+    overflow: visible;
+  }
+
+  .home-snap {
+    height: auto;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+
+  .home-page {
+    display: block;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .home-page-panel {
+    height: auto;
+    overflow: visible;
+  }
+
+  .session-page {
+    display: block;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .session-page-panel {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 640px) {
+  .container-shell {
+    width: min(100% - 24px, 1180px);
+  }
+}

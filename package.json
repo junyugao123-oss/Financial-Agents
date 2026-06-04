@@ -1,0 +1,19 @@
+{
+  "name": "junyu-research-agent",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev:api & npm run dev:web",
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:api": "cd services/api && ${PYTHON:-python3} -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "lint": "npm --workspace apps/web run lint",
+    "typecheck": "npm --workspace apps/web run typecheck",
+    "test": "npm run test:api",
+    "test:api": "cd services/api && ${PYTHON:-python3} -m pytest",
+    "build": "npm --workspace apps/web run build",
+    "smoke": "bash scripts/smoke.sh"
+  }
+}
