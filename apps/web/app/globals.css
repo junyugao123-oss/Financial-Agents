@@ -220,6 +220,10 @@ a:focus-visible {
   gap: 16px;
 }
 
+.mobile-session-dock {
+  display: none;
+}
+
 .session-pages {
   height: 100%;
   min-height: 0;
@@ -373,13 +377,15 @@ a:focus-visible {
   }
 
   .home-page {
-    height: 100dvh;
-    min-height: 100dvh;
+    height: min(100dvh, 100vh);
+    min-height: min(100dvh, 100vh);
+    max-height: min(100dvh, 100vh);
     overflow: hidden;
   }
 
   .home-page-panel {
-    height: 100dvh;
+    height: 100%;
+    max-height: 100%;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
@@ -468,6 +474,10 @@ a:focus-visible {
     overflow-x: hidden;
   }
 
+  html:has(.session-root) {
+    scroll-padding-bottom: 118px;
+  }
+
   .session-root {
     min-height: 100dvh;
   }
@@ -478,7 +488,90 @@ a:focus-visible {
   }
 
   .session-workspace {
-    padding: 10px 0 calc(72px + env(safe-area-inset-bottom));
+    padding: 10px 0 calc(126px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-session-dock {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    display: block;
+    border-top: 1px solid var(--line);
+    background: oklch(0.995 0.002 220 / 0.96);
+    box-shadow: 0 -8px 22px oklch(0.2 0.03 230 / 0.1);
+    backdrop-filter: blur(14px);
+  }
+
+  .mobile-session-dock-inner {
+    width: min(100% - 20px, 1180px);
+    margin: 0 auto;
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-session-dock-summary {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+    color: var(--ink-soft);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .mobile-session-dock-target {
+    min-width: 0;
+    max-width: 36vw;
+    overflow: hidden;
+    color: var(--teal-strong);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-session-dock-symbol {
+    border-radius: 6px;
+    background: var(--bg-soft);
+    padding: 2px 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .mobile-session-dock-count {
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  .mobile-session-dock-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    margin-top: 7px;
+  }
+
+  .mobile-session-dock-link {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: white;
+    color: var(--ink-muted);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .mobile-session-dock-link[data-active="true"] {
+    border-color: var(--teal-strong);
+    background: var(--teal-strong);
+    color: white;
   }
 
   .session-workbench {
@@ -516,6 +609,11 @@ a:focus-visible {
     padding-bottom: 4px;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .session-progress-list::-webkit-scrollbar {
+    display: none;
   }
 
   .session-progress-list > :not([hidden]) ~ :not([hidden]) {
@@ -538,6 +636,11 @@ a:focus-visible {
     overflow-x: auto;
     padding-bottom: 4px;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .session-participant-list::-webkit-scrollbar {
+    display: none;
   }
 
   .session-participant-list > :not([hidden]) ~ :not([hidden]) {
@@ -570,9 +673,10 @@ a:focus-visible {
   }
 
   .committee-chat-scroll {
-    min-height: min(54dvh, 420px);
-    max-height: calc(100dvh - 220px);
+    min-height: min(48dvh, 380px);
+    max-height: min(62dvh, 520px);
     padding: 12px;
+    scroll-padding-bottom: 88px;
   }
 
   .chat-message {
@@ -606,6 +710,72 @@ a:focus-visible {
   select,
   a {
     min-height: 44px;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  html:has(.home-snap) {
+    height: 100%;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+  }
+
+  body:has(.home-snap) {
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+
+  .home-page {
+    height: min(100dvh, 100vh);
+    min-height: min(100dvh, 100vh);
+    max-height: min(100dvh, 100vh);
+    overflow: hidden;
+  }
+
+  .home-page-panel {
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-home-flow,
+  .mobile-committee-preview {
+    min-height: 100%;
+    height: auto;
+    align-items: start;
+    padding-block: 12px;
+  }
+
+  #research-task .container-shell {
+    align-items: center;
+    gap: 0;
+    padding-block: 10px;
+  }
+
+  #research-task .container-shell > div:first-child {
+    display: none;
+  }
+
+  #research-task form {
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 12px;
+  }
+
+  #research-task form .pb-5 {
+    padding-bottom: 10px;
+  }
+
+  #research-task form .mt-6 {
+    margin-top: 12px;
+  }
+
+  #research-task form .space-y-5 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 12px;
   }
 }
 

@@ -229,6 +229,23 @@ export function HomeExperience() {
     market === "港股"
       ? { title: "港股示例", query: "五一视界", code: "HK6651" }
       : { title: "A股示例", query: "摩尔线程-U", code: "688795" };
+  const switchMarketSearchScope = (targetMarket: Market) => {
+    setMarket(targetMarket);
+    setSymbolQuery("");
+    setRemoteSuggestions([]);
+    setSearchError(null);
+    setIsSearchingStocks(false);
+    setSelectedStock(null);
+  };
+  const lockMarketHintStock = (targetMarket: Market = market) => {
+    const stock = getMarketHintStock(targetMarket);
+    setMarket(targetMarket);
+    setSymbolQuery("");
+    setRemoteSuggestions([]);
+    setSearchError(null);
+    setIsSearchingStocks(false);
+    setSelectedStock(stock);
+  };
   const localSuggestions = useMemo(
     () => searchLocalStocks(market, symbolQuery),
     [market, symbolQuery],
@@ -309,15 +326,18 @@ export function HomeExperience() {
 
       isSnapping = true;
       const targetId = homeSectionIds[nextIndex];
-      scrollToHomeSection(targetId, "smooth");
-      window.history.replaceState(null, "", `#${targetId}`);
-      releaseTimer = window.setTimeout(releaseSnapLock, 720);
+      scrollToHomeSection(targetId, "auto");
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}#${targetId}`,
+      );
+      releaseTimer = window.setTimeout(releaseSnapLock, 520);
     }
 
     function handleWheel(event: WheelEvent) {
       if (!desktopQuery.matches) return;
       if (Math.abs(event.deltaY) < wheelSnapThreshold) return;
-      if (canScrollInsideHomePanel(event.target, event.deltaY)) return;
 
       event.preventDefault();
       if (isSnapping) return;
@@ -336,12 +356,12 @@ export function HomeExperience() {
       }
     }
 
-    window.addEventListener("wheel", handleWheel, { passive: false });
+    window.addEventListener("wheel", handleWheel, { passive: false, capture: true });
     window.addEventListener("keydown", handleKeyDown);
     desktopQuery.addEventListener("change", releaseSnapLock);
 
     return () => {
-      window.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("wheel", handleWheel, true);
       window.removeEventListener("keydown", handleKeyDown);
       desktopQuery.removeEventListener("change", releaseSnapLock);
       releaseSnapLock();
@@ -427,7 +447,7 @@ export function HomeExperience() {
                 量化模型 × DeepSeek
               </span>
               <span className="inline-flex items-center rounded-full border border-teal-200/45 bg-teal-300/22 px-3 py-1 font-medium text-teal-50">
-                10 位金融专家
+                10位金融专家提供专业建议
               </span>
             </div>
           </header>
@@ -462,30 +482,41 @@ export function HomeExperience() {
             >
               <div className="flex items-center justify-between border-b border-white/12 pb-3 md:pb-4">
                 <div>
-                  <div className="text-xs text-white/58 md:text-sm">核心流程</div>
-                  <div className="mt-1 text-lg font-semibold md:text-xl">量化模型 × DeepSeek 决策引擎</div>
+                  <div className="text-xs text-white/58 md:text-sm">核心优势</div>
+                  <div className="mt-1 text-lg font-semibold md:text-xl">AI量化金融分析系统能帮你什么</div>
                 </div>
                 <Activity className="text-teal-200" size={22} />
               </div>
               <div className="space-y-2 pt-3 md:space-y-4 md:pt-5">
-                {["模型生成量化底稿", "A/H 数据补证校验", "投委会收敛专业报告"].map(
-                  (item, index) => (
-                    <div
-                      key={item}
-                      className="flex items-center gap-3 rounded-lg border border-white/12 bg-white/[0.06] p-2.5 md:p-3"
-                    >
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-300/18 text-sm text-teal-100">
-                        {index + 1}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium">{item}</div>
-                        <div className="mt-1 hidden text-xs text-white/55 sm:block">
-                          记录数据、分歧与风险边界
-                        </div>
+                {[
+                  {
+                    title: "快速筛出关键量化信号",
+                    body: "趋势、动量、波动、量价与风险先形成底稿",
+                  },
+                  {
+                    title: "把A/H信息整理成证据链",
+                    body: "行情、公告、新闻和公开资料统一沉淀",
+                  },
+                  {
+                    title: "输出可读的专业研究报告",
+                    body: "金融专家交叉质询后形成观点与建议",
+                  },
+                ].map((item, index) => (
+                  <div
+                    key={item.title}
+                    className="flex items-center gap-3 rounded-lg border border-white/12 bg-white/[0.06] p-2.5 md:p-3"
+                  >
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-300/18 text-sm text-teal-100">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium">{item.title}</div>
+                      <div className="mt-1 hidden text-xs text-white/55 sm:block">
+                        {item.body}
                       </div>
                     </div>
-                  ),
-                )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -818,22 +849,18 @@ export function HomeExperience() {
                       key={item}
                       type="button"
                       onClick={() => {
-                        setMarket(item);
-                        setSelectedStock(null);
-                        setSymbolQuery("");
-                        setRemoteSuggestions([]);
-                        setSearchError(null);
+                        switchMarketSearchScope(item);
                       }}
                       className={`rounded-md px-4 py-2 text-sm font-medium transition ${
                         market === item
-                          ? "border border-red-200 bg-red-50 text-red-700 shadow-sm"
+                          ? "border border-teal-200 bg-teal-50 text-teal-800 shadow-sm"
                           : "bg-white/55 text-[var(--ink-muted)] hover:bg-white"
                       }`}
                     >
                       <span className="block text-base font-semibold">{item}</span>
                       <span
                         className={`mt-0.5 block text-xs ${
-                          market === item ? "text-red-600/85" : "text-[var(--ink-soft)]"
+                          market === item ? "text-teal-700" : "text-[var(--ink-soft)]"
                         }`}
                       >
                         {item === "港股" ? "如 五一视界 / HK6651" : "如 摩尔线程-U / 688795"}
@@ -849,14 +876,14 @@ export function HomeExperience() {
                     <label className="text-sm font-semibold" htmlFor="symbol-search">
                       标的搜索
                     </label>
-                    <span className="rounded-full border border-red-100 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+                    <span className="rounded-full border border-teal-100 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
                       当前搜索：{market}
                     </span>
                   </div>
                   <div className="relative mt-2">
                     <Search
                       aria-hidden="true"
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-red-600"
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-teal-700"
                       size={20}
                     />
                     <input
@@ -870,7 +897,7 @@ export function HomeExperience() {
                         setSearchError(null);
                         setIsSearchingStocks(nextQuery.trim().length > 0);
                       }}
-                      className="w-full rounded-lg border-2 border-red-200 bg-red-50/30 py-3 pl-11 pr-3 text-base font-medium text-[var(--ink)] shadow-[0_0_0_4px_oklch(0.94_0.055_25_/_0.35)] placeholder:font-medium placeholder:text-[var(--ink-muted)] focus:border-red-300 focus:outline-none"
+                      className="w-full rounded-lg border-2 border-teal-200 bg-teal-50/35 py-3 pl-11 pr-3 text-base font-medium text-[var(--ink)] shadow-[0_0_0_4px_oklch(0.95_0.045_180_/_0.42)] placeholder:font-medium placeholder:text-[var(--ink-muted)] focus:border-teal-300 focus:outline-none"
                       placeholder={`输入公司名、简称或代码，如 ${marketHint.query} / ${marketHint.code}`}
                     />
                   </div>
@@ -878,27 +905,15 @@ export function HomeExperience() {
                     <span className="text-[var(--ink-muted)]">快速示例</span>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSymbolQuery(marketHint.query);
-                        setSelectedStock(null);
-                        setRemoteSuggestions([]);
-                        setSearchError(null);
-                        setIsSearchingStocks(true);
-                      }}
-                      className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100"
+                      onClick={() => lockMarketHintStock(market)}
+                      className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 font-medium text-teal-700 transition hover:border-teal-300 hover:bg-teal-100"
                     >
                       {marketHint.title}：{marketHint.query}
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSymbolQuery(marketHint.code);
-                        setSelectedStock(null);
-                        setRemoteSuggestions([]);
-                        setSearchError(null);
-                        setIsSearchingStocks(true);
-                      }}
-                      className="rounded-full border border-red-200 bg-white px-2.5 py-1 font-medium text-red-700 transition hover:border-red-300 hover:bg-red-50"
+                      onClick={() => lockMarketHintStock(market)}
+                      className="rounded-full border border-teal-200 bg-white px-2.5 py-1 font-medium text-teal-700 transition hover:border-teal-300 hover:bg-teal-50"
                     >
                       代码：{marketHint.code}
                     </button>
@@ -906,9 +921,9 @@ export function HomeExperience() {
                 </div>
                 <div className="mt-3 space-y-2">
                   {!hasSearchQuery && selectedStock ? (
-                    <div className="flex w-full items-center justify-between gap-3 rounded-lg border-2 border-red-200 bg-red-50 px-3 py-3 text-left text-red-700">
+                    <div className="flex w-full items-center justify-between gap-3 rounded-lg border-2 border-teal-200 bg-teal-50 px-3 py-3 text-left text-teal-800">
                       <span className="min-w-0">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-red-700">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-teal-700">
                           <CheckCircle2 size={13} />
                           标的已锁定
                         </span>
@@ -920,7 +935,7 @@ export function HomeExperience() {
                           {selectedStock.description ? ` · ${selectedStock.description}` : ""}
                         </span>
                       </span>
-                      <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-red-700">
+                      <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-teal-700">
                         可直接开会
                       </span>
                     </div>
@@ -951,7 +966,7 @@ export function HomeExperience() {
                             }}
                             className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left transition ${
                               selected
-                                ? "border-red-200 bg-red-50 text-red-700"
+                                ? "border-teal-200 bg-teal-50 text-teal-800"
                                 : "border-[var(--line)] bg-white hover:bg-[var(--bg-soft)]"
                             }`}
                           >
@@ -998,7 +1013,10 @@ export function HomeExperience() {
                   onChange={(event) => setDepth(event.target.value as Depth)}
                   className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-3 text-base"
                 >
-                  <option value="标准">标准（深度思考待后续开放）</option>
+                  <option value="标准">标准</option>
+                  <option value="深入" disabled>
+                    深度研究（待后续开放）
+                  </option>
                 </select>
               </div>
 
@@ -1023,10 +1041,17 @@ export function HomeExperience() {
 function scrollToHomeSection(sectionId: string, behavior: ScrollBehavior) {
   const target = document.getElementById(sectionId);
   if (!target) return;
-  const top = target.getBoundingClientRect().top + window.scrollY;
+  const top = target.offsetTop;
   window.scrollTo({ top, behavior });
-  document.documentElement.scrollTo({ top, behavior });
-  document.body.scrollTo({ top, behavior });
+  if (behavior === "auto") {
+    document.documentElement.scrollTop = top;
+    document.body.scrollTop = top;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top, behavior: "auto" });
+      document.documentElement.scrollTop = top;
+      document.body.scrollTop = top;
+    });
+  }
 }
 
 function nearestHomeSectionIndex() {
@@ -1036,7 +1061,7 @@ function nearestHomeSectionIndex() {
   homeSectionIds.forEach((sectionId, index) => {
     const section = document.getElementById(sectionId);
     if (!section) return;
-    const sectionTop = section.getBoundingClientRect().top + window.scrollY;
+    const sectionTop = section.offsetTop;
     const distance = Math.abs(sectionTop - viewportTop);
     if (distance < nearestDistance) {
       nearestDistance = distance;
@@ -1044,27 +1069,6 @@ function nearestHomeSectionIndex() {
     }
   });
   return nearestIndex;
-}
-
-function canScrollInsideHomePanel(target: EventTarget | null, deltaY: number) {
-  if (!(target instanceof HTMLElement)) return false;
-  let element: HTMLElement | null = target;
-
-  while (element && !element.classList.contains("home-page")) {
-    const style = window.getComputedStyle(element);
-    const canScrollY = style.overflowY === "auto" || style.overflowY === "scroll";
-    const hasOverflow = element.scrollHeight > element.clientHeight + 2;
-    if (canScrollY && hasOverflow) {
-      const canScrollDown = element.scrollTop + element.clientHeight < element.scrollHeight - 2;
-      const canScrollUp = element.scrollTop > 2;
-      if ((deltaY > 0 && canScrollDown) || (deltaY < 0 && canScrollUp)) {
-        return true;
-      }
-    }
-    element = element.parentElement;
-  }
-
-  return false;
 }
 
 function shouldIgnoreHomeSnapKey(event: KeyboardEvent) {
@@ -1108,6 +1112,11 @@ function mergeStockSuggestions(
     }
   }
   return [...merged.values()];
+}
+
+function getMarketHintStock(market: Market) {
+  const symbol = market === "港股" ? "06651.HK" : "688795.SH";
+  return stockUniverse.find((stock) => stock.market === market && stock.symbol === symbol) ?? null;
 }
 
 function stockSearchResultToCandidate(result: StockSearchResult): StockCandidate {

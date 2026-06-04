@@ -726,6 +726,14 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
         </div>
       </section>
 
+      <MobileSessionDock
+        activePhase={activePhase}
+        events={events}
+        report={report}
+        targetName={targetName}
+        targetSymbol={targetSymbol}
+      />
+
       <div className="session-workspace container-shell">
         <div className="session-workbench">
           <aside className="session-sidebar">
@@ -782,6 +790,66 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
         </div>
       </div>
     </main>
+  );
+}
+
+function MobileSessionDock({
+  activePhase,
+  events,
+  report,
+  targetName,
+  targetSymbol,
+}: {
+  activePhase: string;
+  events: DecisionEvent[];
+  report: ResearchReport | null;
+  targetName: string;
+  targetSymbol: string;
+}) {
+  const links = [
+    {
+      href: "#事实底稿",
+      label: "底稿",
+      Icon: BrainCircuit,
+      active: !report && activePhase === "事实底稿",
+    },
+    {
+      href: "#live-dialogue",
+      label: "纪要",
+      Icon: MessageSquareText,
+      active: !report && activePhase !== "事实底稿",
+    },
+    {
+      href: "#final-report-page",
+      label: "报告",
+      Icon: FileText,
+      active: Boolean(report),
+    },
+  ];
+
+  return (
+    <nav className="mobile-session-dock no-print" aria-label="移动端投研导航">
+      <div className="mobile-session-dock-inner">
+        <div className="mobile-session-dock-summary">
+          <span className="mobile-session-dock-target">{targetName || "当前标的"}</span>
+          {targetSymbol ? <span className="mobile-session-dock-symbol">{targetSymbol}</span> : null}
+          <span className="mobile-session-dock-count">{recordedSpeechLabel(events, report)}</span>
+        </div>
+        <div className="mobile-session-dock-actions">
+          {links.map(({ href, label, Icon, active }) => (
+            <a
+              key={href}
+              href={href}
+              className="mobile-session-dock-link"
+              data-active={active ? "true" : undefined}
+            >
+              <Icon size={15} />
+              <span>{label}</span>
+            </a>
+          ))}
+        </div>
+      </div>
+    </nav>
   );
 }
 
