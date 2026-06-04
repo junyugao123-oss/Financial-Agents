@@ -500,9 +500,9 @@ export function HomeExperience() {
 
       <section id="process" className="home-page bg-[var(--bg)]">
         <div className="home-page-panel">
-        <div className="container-shell flex min-h-[100dvh] items-stretch py-4 md:py-5 lg:h-[100dvh]">
+        <div className="mobile-home-flow container-shell flex min-h-[100dvh] items-stretch py-4 md:py-5 lg:h-[100dvh]">
           <div className="grid h-full w-full min-h-0 items-stretch gap-4 xl:grid-cols-[0.92fr_1.08fr]">
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg bg-[var(--ink)] p-5 text-white md:p-6">
+            <div className="mobile-home-dark-panel flex min-h-0 flex-col overflow-hidden rounded-lg bg-[var(--ink)] p-5 text-white md:p-6">
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/14 bg-white/8 px-3 py-1 text-xs font-medium text-white/78">
                   <ShieldCheck size={14} />
@@ -516,7 +516,7 @@ export function HomeExperience() {
                 </p>
               </div>
 
-              <div className="mt-6 grid min-h-0 gap-3 sm:grid-cols-3 min-[1500px]:gap-4">
+              <div className="mobile-home-pillar-grid mt-6 grid min-h-0 gap-3 sm:grid-cols-3 min-[1500px]:gap-4">
                 {[
                   [
                     "AI 量化与深度推理引擎",
@@ -538,7 +538,7 @@ export function HomeExperience() {
                 ))}
               </div>
 
-              <div className="mt-auto pt-5">
+              <div className="mobile-home-strip mt-auto pt-5">
                 <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/12 bg-white/[0.06] p-3">
                   {["AI 底稿", "A/H 数据", "投委会报告"].map((title) => (
                     <div
@@ -553,7 +553,7 @@ export function HomeExperience() {
               </div>
             </div>
 
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 md:p-6">
+            <div className="mobile-home-capability flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 md:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--line)] pb-4">
                 <div>
                   <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-sm font-medium text-[var(--teal-strong)]">
@@ -646,9 +646,9 @@ export function HomeExperience() {
 
       <section id="committee-preview" className="home-page bg-[var(--bg-soft)]">
         <div className="home-page-panel">
-          <div className="container-shell flex h-[100dvh] items-stretch py-4 md:py-5">
+          <div className="mobile-committee-preview container-shell flex h-[100dvh] items-stretch py-4 md:py-5">
             <div className="grid h-full w-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-              <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-white p-5 md:p-6">
+              <div className="mobile-committee-dialogue flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-white p-5 md:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--line)] pb-4">
                   <div>
                     <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-sm font-medium text-[var(--teal-strong)]">
@@ -700,8 +700,8 @@ export function HomeExperience() {
                 </div>
               </div>
 
-              <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-                <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-white p-5 md:p-6">
+              <div className="mobile-report-preview-grid grid h-full min-h-0 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+                <div className="mobile-report-chart-card flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-white p-5 md:p-6">
                   <div className="flex items-center gap-2 text-base font-semibold text-[var(--teal-strong)]">
                     <BarChart3 size={18} />
                     报告图表预览
@@ -740,7 +740,7 @@ export function HomeExperience() {
                   </div>
                 </div>
 
-                <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--ink)] p-5 text-white md:p-6">
+                <div className="mobile-final-report-card flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--ink)] p-5 text-white md:p-6">
                   <div className="flex items-center gap-2 text-base font-semibold text-teal-100">
                     <FileText size={18} />
                     最终专业报告

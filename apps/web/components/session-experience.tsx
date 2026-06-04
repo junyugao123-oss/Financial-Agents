@@ -677,7 +677,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
 
   return (
     <main className="session-root bg-[var(--bg)]">
-      <header className="shrink-0 border-b border-[var(--line)] bg-[var(--surface)]">
+      <header className="session-header shrink-0 border-b border-[var(--line)] bg-[var(--surface)]">
         <div className="container-shell flex flex-wrap items-center justify-between gap-3 py-4">
           <div className="flex min-w-0 items-center gap-2 md:gap-4">
             <Link
@@ -799,8 +799,8 @@ function SimpleMeetingAside({
   const activeIndex = Math.max(0, phaseOrder.indexOf(activePhase));
 
   return (
-    <div className="space-y-4">
-      <section className="panel p-4">
+    <div className="session-aside-stack space-y-4">
+      <section className="panel session-progress-card p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-[var(--teal-strong)]">
             <Activity size={17} />
@@ -810,13 +810,13 @@ function SimpleMeetingAside({
             {recordedSpeechLabel(events, report)}
           </span>
         </div>
-        <div className="mt-4 space-y-3">
+        <div className="session-progress-list mt-4 space-y-3">
           {phaseOrder.map((phase, index) => {
             const isDone = Boolean(report) || index < activeIndex;
             const isActive = !report && phase === activePhase;
             const progress = getPhaseProgress({ events, index, phase, report, activeIndex });
             return (
-              <a key={phase} className="block" href={`#${phase}`}>
+              <a key={phase} className="session-progress-link block" href={`#${phase}`}>
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <span
                     className={`text-sm font-medium ${
@@ -848,7 +848,7 @@ function SimpleMeetingAside({
         </div>
       </section>
 
-      <section className="panel p-4">
+      <section className="panel session-participants-card p-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-[var(--teal-strong)]">
           <Users size={17} />
           参会人员
@@ -856,13 +856,13 @@ function SimpleMeetingAside({
         <p className="mt-2 text-xs leading-5 text-[var(--ink-soft)]">
           10 位金融专业角色共同质询底稿，最后收敛为报告。
         </p>
-        <div className="mt-4 space-y-2">
+        <div className="session-participant-list mt-4 space-y-2">
           {participantRoster.map((participant) => {
             const active = participant.role === activeRole;
             return (
               <div
                 key={participant.role}
-                className={`flex items-center gap-3 rounded-lg px-2.5 py-2 transition ${
+                className={`session-participant-item flex items-center gap-3 rounded-lg px-2.5 py-2 transition ${
                   active ? "bg-teal-50 text-[var(--teal-strong)]" : "bg-[var(--bg-soft)]"
                 }`}
               >
@@ -1053,7 +1053,7 @@ function CommitteeChatPanel({
         </div>
       </div>
 
-      <div ref={chatRef} className="min-h-[420px] max-h-[680px] overflow-y-auto bg-[var(--bg-soft)] p-4">
+      <div ref={chatRef} className="committee-chat-scroll min-h-[420px] max-h-[680px] overflow-y-auto bg-[var(--bg-soft)] p-4">
         {events.length === 0 ? (
           <div className="rounded-lg border border-dashed border-[var(--line)] bg-white p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--teal-strong)]">
@@ -1107,9 +1107,9 @@ function ChatBubble({
         : "border-[var(--line)] bg-white";
 
   return (
-    <article className="flex gap-3">
+    <article className="chat-message flex gap-3">
       <RolePortrait active={isLatest} role={event.role} size="normal" />
-      <div className={`min-w-0 max-w-[860px] flex-1 rounded-lg border p-4 ${bubbleClass}`}>
+      <div className={`chat-bubble min-w-0 max-w-[860px] flex-1 rounded-lg border p-4 ${bubbleClass}`}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold">{profile.role}</span>
           <span className="text-xs text-[var(--ink-soft)]">{profile.duty}</span>
@@ -1150,7 +1150,7 @@ function PendingSpeakerNotice({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border border-dashed border-[var(--line)] bg-white/72 text-[var(--ink-muted)] ${
+      className={`pending-speaker-notice flex items-center gap-3 rounded-lg border border-dashed border-[var(--line)] bg-white/72 text-[var(--ink-muted)] ${
         isChat ? "ml-[60px] px-4 py-3" : "px-3 py-3"
       }`}
     >

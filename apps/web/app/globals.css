@@ -356,6 +356,259 @@ a:focus-visible {
   }
 }
 
+@media (max-width: 640px) {
+  html:has(.home-snap) {
+    height: 100%;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+  }
+
+  body:has(.home-snap) {
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+
+  .container-shell {
+    width: min(1180px, calc(100vw - 24px));
+  }
+
+  .home-page {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .home-page-panel {
+    height: 100dvh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .home-hero-panel {
+    overflow-y: auto;
+  }
+
+  .hero-image {
+    background-image:
+      linear-gradient(180deg, oklch(0.13 0.015 230 / 0.9), oklch(0.14 0.018 230 / 0.72)),
+      url("/images/decision-room-hero.png");
+    background-position: 58% center;
+  }
+
+  .mobile-home-flow,
+  .mobile-committee-preview {
+    min-height: 100%;
+    height: auto;
+    align-items: start;
+    padding-block: 12px;
+  }
+
+  .mobile-home-dark-panel,
+  .mobile-home-capability,
+  .mobile-committee-dialogue,
+  .mobile-report-chart-card,
+  .mobile-final-report-card {
+    overflow: visible;
+    padding: 16px;
+  }
+
+  .mobile-home-pillar-grid {
+    gap: 10px;
+  }
+
+  .mobile-home-pillar-grid > * {
+    min-height: auto;
+  }
+
+  .mobile-home-strip {
+    margin-top: 14px;
+    padding-top: 0;
+  }
+
+  .mobile-home-strip > div {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-report-preview-grid {
+    height: auto;
+  }
+
+  #research-task .container-shell {
+    align-items: center;
+    gap: 0;
+    padding-block: 12px;
+  }
+
+  #research-task .container-shell > div:first-child {
+    display: none;
+  }
+
+  #research-task form {
+    padding: 14px;
+  }
+
+  #research-task form .pb-5 {
+    padding-bottom: 12px;
+  }
+
+  #research-task form .mt-6 {
+    margin-top: 14px;
+  }
+
+  #research-task form .space-y-5 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 14px;
+  }
+
+  html:has(.session-root),
+  body:has(.session-root) {
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+
+  .session-root {
+    min-height: 100dvh;
+  }
+
+  .session-header .container-shell {
+    gap: 10px;
+    padding-block: 10px;
+  }
+
+  .session-workspace {
+    padding: 10px 0 calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .session-workbench {
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .session-sidebar {
+    position: static;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .session-aside-stack {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .session-progress-card,
+  .session-participants-card {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 12px;
+  }
+
+  .session-progress-list {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .session-progress-list > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0;
+  }
+
+  .session-progress-link {
+    min-width: 112px;
+    scroll-snap-align: start;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 8px;
+  }
+
+  .session-participant-list {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .session-participant-list > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0;
+  }
+
+  .session-participant-item {
+    min-width: 160px;
+    flex: 0 0 160px;
+    padding: 8px;
+  }
+
+  .session-mainflow {
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .session-mainflow .panel {
+    border-radius: 8px;
+  }
+
+  .session-mainflow h2 {
+    font-size: 21px;
+    line-height: 1.25;
+  }
+
+  .session-mainflow h3 {
+    line-height: 1.25;
+  }
+
+  .committee-chat-scroll {
+    min-height: min(54dvh, 420px);
+    max-height: calc(100dvh - 220px);
+    padding: 12px;
+  }
+
+  .chat-message {
+    gap: 10px;
+  }
+
+  .chat-bubble {
+    padding: 12px;
+  }
+
+  .chat-bubble p {
+    font-size: 14px;
+    line-height: 1.75;
+  }
+
+  .pending-speaker-notice {
+    margin-left: 0 !important;
+    padding: 12px;
+  }
+
+  [data-report-export-root] {
+    box-shadow: none;
+  }
+
+  [data-report-export-root] h2 {
+    font-size: 23px;
+  }
+
+  button,
+  input,
+  select,
+  a {
+    min-height: 44px;
+  }
+}
+
 @media print {
   header,
   aside,
