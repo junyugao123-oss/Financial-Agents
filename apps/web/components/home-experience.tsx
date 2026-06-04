@@ -38,7 +38,7 @@ const steps = [
     icon: Activity,
   },
   {
-    title: "A/H 数据补证",
+    title: "A/H股数据补证",
     body: "补全行情、公告、新闻和公开资料，降低信息断层。",
     icon: BarChart3,
   },
@@ -61,7 +61,7 @@ const valuePillars = [
     icon: ClipboardList,
   },
   {
-    title: "A/H 全域数据中枢",
+    title: "A/H股全域数据中枢",
     body: "持续补全 A 股与港股行情、公告、新闻和公开资料，让讨论建立在可复核信息上。",
     icon: BarChart3,
   },
@@ -100,8 +100,9 @@ const committeePreviewEvents = [
   {
     role: "风控负责人",
     duty: "约束流动性与回撤风险",
-    content: "结论强度先降一档。报告必须写清证据权重、波动风险和触发复核条件，避免把研究判断误读成交易指令。",
+    content: "正在复核证据权重、波动风险和触发复核条件；完成后会一次性写入会议记录。",
     tone: "risk",
+    status: "thinking",
   },
 ];
 
@@ -440,7 +441,7 @@ export function HomeExperience() {
             </div>
             <div className="hidden flex-wrap items-center gap-3 text-sm md:flex">
               <span className="inline-flex items-center rounded-full border border-teal-200/45 bg-teal-300/22 px-3 py-1 font-medium text-teal-50">
-                A/H 全域数据
+                A/H股全域数据
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200/45 bg-teal-300/22 px-3 py-1 font-medium text-teal-50">
                 <BadgeCheck size={14} />
@@ -494,7 +495,7 @@ export function HomeExperience() {
                     body: "趋势、动量、波动、量价与风险先形成底稿",
                   },
                   {
-                    title: "把A/H信息整理成证据链",
+                    title: "把A/H股信息整理成证据链",
                     body: "行情、公告、新闻和公开资料统一沉淀",
                   },
                   {
@@ -543,7 +544,7 @@ export function HomeExperience() {
                   从量化底稿、数据补证到投委会报告，每一步都可追溯。
                 </h2>
                 <p className="mt-3 max-w-[660px] text-sm leading-6 text-white/72 min-[1500px]:text-base min-[1500px]:leading-7">
-                  专业量化模型先识别趋势、动量、波动、量价与风险；A/H 全域数据补全行情、公告、新闻和公开资料；10 位金融角色围绕同一份底稿开会讨论，最后形成报告。
+                  专业量化模型先识别趋势、动量、波动、量价与风险；A/H股全域数据补全行情、公告、新闻和公开资料；10 位金融角色围绕同一份底稿开会讨论，最后形成报告。
                 </p>
               </div>
 
@@ -554,7 +555,7 @@ export function HomeExperience() {
                     "专业量化模型先筛趋势、动量、波动、量价与风险证据，再交给 DeepSeek 组织成可质询底稿。",
                   ],
                   [
-                    "A/H 全域数据中枢",
+                    "A/H股全域数据中枢",
                     "AI 数据挖掘与爬虫机制持续补全 A 股、港股行情、公告、新闻和公开资料。",
                   ],
                   [
@@ -571,7 +572,7 @@ export function HomeExperience() {
 
               <div className="mobile-home-strip mt-auto pt-5">
                 <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/12 bg-white/[0.06] p-3">
-                  {["AI 底稿", "A/H 数据", "投委会报告"].map((title) => (
+                  {["AI 底稿", "A/H股数据", "投委会报告"].map((title) => (
                     <div
                       key={title}
                       className="flex min-w-0 items-center justify-center gap-2 rounded-md bg-white/[0.04] px-2.5 py-2"
@@ -695,11 +696,11 @@ export function HomeExperience() {
                   </span>
                 </div>
 
-                <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                <div className="mt-3 grid min-h-0 flex-1 content-start gap-1.5">
                   {committeePreviewEvents.map((event, index) => (
                     <article
                       key={event.role}
-                      className={`rounded-lg border p-3 ${
+                      className={`rounded-lg border px-3 py-2 ${
                         event.tone === "bull"
                           ? "border-red-100 bg-red-50/65"
                           : event.tone === "bear"
@@ -709,21 +710,31 @@ export function HomeExperience() {
                               : "border-[var(--line)] bg-[var(--surface)]"
                       }`}
                     >
-                      <div className="flex min-w-0 gap-3">
-                        <RolePortrait active={index === 0} role={event.role} size="normal" />
+                      <div className="flex min-w-0 gap-2.5">
+                        <RolePortrait active={event.status === "thinking"} role={event.role} size="normal" />
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
                             <div className="min-w-0">
                               <div className="truncate text-base font-semibold text-[var(--ink)]">
                                 {event.role}
                               </div>
                               <div className="mt-0.5 text-xs text-[var(--ink-soft)]">{event.duty}</div>
                             </div>
-                            <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[var(--ink-muted)]">
-                              第 {index + 1} 轮
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[var(--ink-muted)]">
+                                第 {index + 1} 轮
+                              </span>
+                              {event.status === "thinking" ? (
+                                <span className="inline-flex items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-[var(--teal-strong)]">
+                                  思考中
+                                  <span className="inline-flex w-4 justify-start" aria-hidden="true">
+                                    <span className="animate-pulse">...</span>
+                                  </span>
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
-                          <p className="mt-2 text-sm leading-6 text-[var(--ink-muted)]">{event.content}</p>
+                          <p className="mt-1.5 text-sm leading-5 text-[var(--ink-muted)]">{event.content}</p>
                         </div>
                       </div>
                     </article>
@@ -782,7 +793,7 @@ export function HomeExperience() {
                   </h3>
                   <div className="mt-5 min-h-0 space-y-3 overflow-y-auto pr-1 text-sm leading-6 text-white/72">
                     <p>
-                      报告会把量化底稿、A/H 数据证据、投委会分歧、风控修正和组合经理口径放在同一份文档里。
+                      报告会把量化底稿、A/H股数据证据、投委会分歧、风控修正和组合经理口径放在同一份文档里。
                     </p>
                     <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3">
                       <div className="text-sm font-semibold text-teal-100">报告会包含</div>
@@ -826,7 +837,7 @@ export function HomeExperience() {
               输入标的，启动量化底稿与投委会分析。
             </h2>
             <p className="mt-4 max-w-xl leading-7 text-[var(--ink-muted)]">
-              系统会先生成量化模型底稿，再把 A/H 数据证据交给 10 位金融角色讨论，最后输出专业报告。
+              系统会先生成量化模型底稿，再把 A/H股数据证据交给 10 位金融角色讨论，最后输出专业报告。
             </p>
           </div>
 
@@ -835,7 +846,7 @@ export function HomeExperience() {
               <div>
                 <h3 className="text-xl font-semibold">研究任务立项</h3>
                 <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                  锁定 A/H 标的，系统将先生成量化底稿。
+                  锁定 A/H股标的，系统将先生成量化底稿。
                 </p>
               </div>
             </div>
