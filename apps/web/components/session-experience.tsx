@@ -485,7 +485,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
         source.close();
         return;
       }
-      setSnapshot(payload);
+      setSnapshot((current) => preferFreshSnapshot(current, payload));
       setQuoteError(null);
       setStatus("live");
     });
@@ -569,7 +569,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
         setSession(nextState.session);
         setEvents((current) => mergeDecisionEvents(current, nextState.events));
         if (nextState.snapshot) {
-          setSnapshot(nextState.snapshot);
+          setSnapshot((current) => preferFreshSnapshot(current, nextState.snapshot));
           setQuoteError(null);
         }
         if (nextState.report) {
@@ -603,7 +603,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   useEffect(() => {
-    if (!quoteMarket || !quoteSymbol || status === "completed" || status === "error") return;
+    if (!quoteMarket || !quoteSymbol || status === "error") return;
     let cancelled = false;
     let requestId = 0;
     let controller: AbortController | null = null;
@@ -689,7 +689,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
             </Link>
             <div className="min-w-0">
               <div className="text-xs text-[var(--ink-muted)] md:text-sm">君宇·投研智能体</div>
-              <h1 className="truncate text-lg font-semibold md:text-xl">顶级基金决策室</h1>
+              <h1 className="truncate text-lg font-semibold md:text-xl">基金投研决策室</h1>
               {targetName || targetSymbol ? (
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs md:mt-1 md:gap-2 md:text-sm">
                   {targetName ? (
@@ -3573,6 +3573,22 @@ function quoteStatusLabel(snapshot: MarketSnapshot) {
   return "行情接口待复核";
 }
 
+function preferFreshSnapshot(current: MarketSnapshot | null, next: MarketSnapshot | null) {
+  if (!next) return current;
+  if (!current) return next;
+  if (current.market !== next.market || current.symbol !== next.symbol) return next;
+  return snapshotTimestamp(next) >= snapshotTimestamp(current) ? next : current;
+}
+
+function snapshotTimestamp(snapshot: MarketSnapshot) {
+  const quoteTime = Date.parse(snapshot.data_as_of.replace(" ", "T"));
+  const updatedTime = Date.parse(snapshot.updated_at);
+  return Math.max(
+    Number.isNaN(quoteTime) ? 0 : quoteTime,
+    Number.isNaN(updatedTime) ? 0 : updatedTime,
+  );
+}
+
 function resolveTargetName(
   session: ResearchSession | null,
   snapshot: MarketSnapshot | null,
@@ -4191,7 +4207,7 @@ function nextPendingSpeaker(
   events: DecisionEvent[],
   status: "connecting" | "live" | "completed" | "error",
 ): PendingSpeaker | null {
-  if (status === "completed" || status === "error") {
+  if (status === "completed" || status === "error" || hasReportDraftingStarted(events)) {
     return null;
   }
   const sequence = events.length + 1;

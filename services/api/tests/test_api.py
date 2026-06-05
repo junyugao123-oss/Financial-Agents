@@ -135,10 +135,19 @@ def test_quote_endpoint_returns_realtime_snapshot():
     assert data["latest_close"] == 1.23
 
 
-def test_snapshot_prefers_sina_single_quote_with_correct_units():
+def test_snapshot_prefers_freshest_tencent_quote_over_stale_sources():
     calls: list[str] = []
 
     class FakeProvider(FreeMarketDataProvider):
+        def _read_tencent_quote(self, code: str):
+            calls.append(code)
+            return (
+                'v_hk06651="100~五一视界~06651~132.000~122.900~130.000~8024694.0~'
+                '0~0~132.000~0~0~0~0~0~0~0~0~0~132.000~0~0~0~0~0~0~0~0~0~'
+                '8024694.0~2026/06/03 16:10:00~9.100~7.40~136.800~125.500~'
+                '132.000~8024694.0~1047816064.400";'
+            )
+
         def _read_sina_quote(self, code: str):
             calls.append(code)
             return (
@@ -178,17 +187,22 @@ def test_snapshot_prefers_sina_single_quote_with_correct_units():
 
     snapshot = asyncio.run(FakeProvider().get_snapshot("港股", "06651"))
 
-    assert calls == ["hk06651"]
-    assert snapshot.latest_close == 120.4
-    assert snapshot.pct_change == -0.25
-    assert snapshot.volume == 16_676_207
+    assert calls == ["hk06651", "116.06651", "hk06651"]
+    assert snapshot.source == "Tencent quote 港股 hk06651"
+    assert snapshot.latest_close == 132.0
+    assert snapshot.pct_change == 7.4
+    assert snapshot.volume == 8_024_694
     assert snapshot.name == "五一视界"
 
 
-def test_snapshot_falls_back_to_eastmoney_single_quote():
+def test_snapshot_reads_eastmoney_when_other_realtime_sources_fail():
     calls: list[str] = []
 
     class FakeProvider(FreeMarketDataProvider):
+        def _read_tencent_quote(self, code: str):
+            calls.append(code)
+            raise ValueError("tencent unavailable")
+
         def _read_sina_quote(self, code: str):
             calls.append(code)
             raise ValueError("sina unavailable")
@@ -209,7 +223,7 @@ def test_snapshot_falls_back_to_eastmoney_single_quote():
 
     snapshot = asyncio.run(FakeProvider().get_snapshot("港股", "06651"))
 
-    assert calls == ["hk06651", "116.06651"]
+    assert calls == ["hk06651", "116.06651", "hk06651"]
     assert snapshot.source == "Eastmoney quote 港股 116.06651"
     assert snapshot.latest_close == 120.4
     assert snapshot.pct_change == -0.25
@@ -218,6 +232,9 @@ def test_snapshot_falls_back_to_eastmoney_single_quote():
 
 def test_eastmoney_a_share_volume_converts_lots_to_shares():
     class FakeProvider(FreeMarketDataProvider):
+        def _read_tencent_quote(self, code: str):
+            raise ValueError("tencent unavailable")
+
         def _read_sina_quote(self, code: str):
             raise ValueError("sina unavailable")
 
@@ -245,6 +262,9 @@ def test_eastmoney_a_share_volume_converts_lots_to_shares():
 
 def test_snapshot_reads_sina_a_share_quote():
     class FakeProvider(FreeMarketDataProvider):
+        def _read_tencent_quote(self, code: str):
+            raise ValueError("tencent unavailable")
+
         def _read_eastmoney_quote(self, secid: str):
             raise ValueError("eastmoney unavailable")
 
@@ -268,6 +288,9 @@ def test_snapshot_reads_sina_a_share_quote():
 
 def test_sina_fallback_keeps_verified_local_display_name():
     class FakeProvider(FreeMarketDataProvider):
+        def _read_tencent_quote(self, code: str):
+            raise ValueError("tencent unavailable")
+
         def _read_eastmoney_quote(self, secid: str):
             raise ValueError("eastmoney unavailable")
 
@@ -288,6 +311,9 @@ def test_sina_fallback_keeps_verified_local_display_name():
 
 def test_snapshot_reads_sina_hk_quote():
     class FakeProvider(FreeMarketDataProvider):
+        def _read_tencent_quote(self, code: str):
+            raise ValueError("tencent unavailable")
+
         def _read_eastmoney_quote(self, secid: str):
             raise ValueError("eastmoney unavailable")
 
@@ -531,12 +557,42 @@ def test_bull_bear_report_section_summarizes_without_first_person():
             stance="bear",
             created_at=now,
         ),
+        DecisionEvent(
+            session_id=session.id,
+            sequence=3,
+            phase="风控审查",
+            role="风控负责人",
+            event_type="风控修正",
+            title="限定风险边界",
+            content="我建议把结论强度和证据等级分开，波动和回撤需要持续跟踪。",
+            stance="risk",
+            created_at=now,
+        ),
+        DecisionEvent(
+            session_id=session.id,
+            sequence=4,
+            phase="投委会收敛",
+            role="组合经理",
+            event_type="收敛",
+            title="收敛投资口径",
+            content="我会把量化观察作为输入，再根据多空证据和风控约束收敛表述。",
+            stance="decision",
+            created_at=now,
+        ),
     ]
 
     report = render_report(session, snapshot, events, quant)
     bull_bear = next(section for section in report.sections if section.key == "bull_bear")
+    risk = next(section for section in report.sections if section.key == "risk")
+    judgement = next(section for section in report.sections if section.key == "judgement")
+    recommendation = next(section for section in report.sections if section.key == "recommendation")
 
     assert "多方证据摘要" in bull_bear.content
     assert "空方约束摘要" in bull_bear.content
     assert "我" not in bull_bear.content
+    assert "我" not in risk.content
+    assert "我" not in judgement.content
+    assert "我" not in recommendation.content
     assert "我把多头假设" not in bull_bear.content
+    assert "我建议" not in risk.content
+    assert "我会把" not in recommendation.content

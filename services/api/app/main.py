@@ -342,10 +342,14 @@ async def _run_session_background(session_id: str) -> None:
     last_sequence = max((event.sequence for event in repository.list_events(session_id)), default=0)
     running_sessions.add(session_id)
     try:
-        snapshot = repository.get_market_snapshot(session.market, session.symbol)
-        if snapshot is None:
+        cached_snapshot = repository.get_market_snapshot(session.market, session.symbol)
+        try:
             snapshot = await data_provider.get_snapshot(session.market, session.symbol)
             repository.save_market_snapshot(snapshot)
+        except Exception:
+            if cached_snapshot is None:
+                raise
+            snapshot = cached_snapshot
 
         quant_brief: QuantBrief | None = None
         try:

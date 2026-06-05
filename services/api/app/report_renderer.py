@@ -84,7 +84,12 @@ def render_report(
             key="risk",
             title="风险边界",
             status="ready",
-            content=_join_points("风控关注", risk_points),
+            content=_render_risk_boundary(
+                quant_brief=quant_brief,
+                rating=rating,
+                risk_points=risk_points,
+                snapshot=snapshot,
+            ),
         ),
         ReportSection(
             key="judgement",
@@ -219,6 +224,42 @@ def _join_points(title: str, points: list[str]) -> str:
     return "\n".join(lines)
 
 
+def _render_risk_boundary(
+    *,
+    quant_brief: QuantBrief | None,
+    rating: str,
+    risk_points: list[str],
+    snapshot: MarketSnapshot,
+) -> str:
+    if quant_brief:
+        risk_level = (
+            "高风险"
+            if quant_brief.risk_score >= 82
+            else "中等风险"
+            if quant_brief.risk_score >= 58
+            else "低风险"
+        )
+        return (
+            f"风险等级：{risk_level}，风险约束 {quant_brief.risk_score}/100，"
+            f"波动因子 {quant_brief.volatility_score}/100，信息完整指数 {quant_brief.evidence_score}/100。\n"
+            f"主要边界：{snapshot.name} 当前研究评级为 {rating}，需要同时观察价格波动、成交活跃度、"
+            "回撤区间和公告事实是否同向验证。\n"
+            "触发条件：若波动继续扩张、成交活跃度回落或价格跌破关键通道，研究口径应下调；"
+            "若风险读数回落且量价结构继续改善，可维持或上调观察优先级。"
+        )
+    if risk_points:
+        return (
+            "风险等级：待复核。\n"
+            "主要边界：本轮风控发言已识别到额外约束，报告需保留价格波动、成交活跃度和回撤区间复核。\n"
+            "触发条件：后续补齐量化底稿后，再重新校准风险等级和跟踪优先级。"
+        )
+    return (
+        "风险等级：待复核。\n"
+        "主要边界：当前仅保留行情事实和会议讨论记录，后续需补充量化底稿、公告和财务事实。\n"
+        "触发条件：完成数据补证后，再更新研究口径。"
+    )
+
+
 def _render_bull_bear_summary(
     *,
     snapshot: MarketSnapshot,
@@ -269,9 +310,9 @@ def _render_key_judgement(
         if quant_brief
         else "量化底稿暂未形成，当前仅保留行情事实与会议讨论输入。"
     )
-    bull_line = _compact_point(bull_points, "多方尚未形成足够强的上行证据。")
-    bear_line = _compact_point(bear_points, "空方尚未提出足够强的反证。")
-    risk_line = _compact_point(risk_points, "风控未识别到额外风险边界，但仍需等待更多公开事实复核。")
+    bull_line = _support_summary(quant_brief)
+    bear_line = _constraint_summary(quant_brief, bear_points)
+    risk_line = _risk_summary(quant_brief, risk_points)
     return (
         f"核心判断：{snapshot.name} 当前研究评级为 {rating}，研究动作口径为 {action_label}，"
         f"信息完整指数 {confidence}/100。\n"
@@ -312,7 +353,7 @@ def _render_research_recommendation(
         if quant_brief
         else "当前可见行情尚不足以支持进攻口径，研究动作先按短期观望和不新增持有处理。"
     )
-    manager_line = manager_content.strip() or "组合经理将研究动作收敛为当前口径，并要求按跟踪条件复核。"
+    manager_line = _manager_summary(manager_content)
     return (
         f"{action_text}\n"
         f"判断依据：{factor_line}\n"
@@ -327,6 +368,49 @@ def _compact_point(points: list[str], fallback: str) -> str:
     if not points:
         return fallback
     return points[0].replace("\n", " ").strip()
+
+
+def _support_summary(quant_brief: QuantBrief | None) -> str:
+    if quant_brief is None:
+        return "多方证据需等待量化底稿和公开事实补齐后再确认。"
+    return (
+        f"多方证据主要来自趋势、动量和量价结构，当前趋势 {quant_brief.trend_score}/100，"
+        f"动量 {quant_brief.momentum_score}/100，量价 {quant_brief.volume_score}/100；"
+        "若相对强弱延续且成交活跃度不回落，可维持积极观察。"
+    )
+
+
+def _constraint_summary(quant_brief: QuantBrief | None, bear_points: list[str]) -> str:
+    if quant_brief is None:
+        return "空方约束需等待波动、回撤和成交活跃度指标补齐后再确认。"
+    if bear_points:
+        return (
+            f"空方约束集中在波动扩张、估值承接、成交持续性和回撤风险，"
+            f"当前波动 {quant_brief.volatility_score}/100，风险约束 {quant_brief.risk_score}/100。"
+        )
+    return (
+        f"当前风险约束 {quant_brief.risk_score}/100，仍需持续跟踪波动、回撤和成交活跃度变化。"
+    )
+
+
+def _risk_summary(quant_brief: QuantBrief | None, risk_points: list[str]) -> str:
+    if quant_brief is None:
+        return "风控结论待量化底稿补齐后确认。"
+    risk_state = "偏高" if quant_brief.risk_score >= 82 else "可控"
+    suffix = "风控已要求报告写明失效条件和跟踪触发线。" if risk_points else "仍需保留失效条件和跟踪触发线。"
+    return (
+        f"风控判断为风险约束{risk_state}，证据覆盖 {quant_brief.evidence_score}/100。"
+        f"{suffix}"
+    )
+
+
+def _manager_summary(manager_content: str) -> str:
+    if manager_content.strip():
+        return (
+            "组合经理将多空分歧、风控边界和量化底稿收敛为当前研究口径，"
+            "后续按跟踪条件复核并更新报告结论。"
+        )
+    return "组合经理将研究动作收敛为当前口径，并要求按跟踪条件复核。"
 
 
 def _render_markdown(

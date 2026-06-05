@@ -29,7 +29,7 @@ async def validate_symbol(provider: FreeMarketDataProvider, market: str, symbol:
     snapshot = await provider.get_snapshot(market, symbol)
     if snapshot.quote_type != "realtime":
         issues.append(f"{market} {symbol}: quote_type is {snapshot.quote_type}, expected realtime")
-    real_quote_sources = ("Eastmoney quote", "Sina quote")
+    real_quote_sources = ("Eastmoney quote", "Sina quote", "Tencent quote")
     if not snapshot.source.startswith(real_quote_sources):
         issues.append(
             f"{market} {symbol}: quote source is {snapshot.source}, "

@@ -100,26 +100,43 @@ class FreeMarketDataProvider:
     ) -> MarketSnapshot:
         cached_symbol = normalize_symbol(market, symbol)
         realtime_error: Exception | None = None
+        realtime_snapshots: list[MarketSnapshot] = []
+        realtime_errors: list[str] = []
 
-        try:
-            return await asyncio.to_thread(self._fetch_sina_snapshot, market, cached_symbol)
-        except Exception as exc:
-            realtime_error = exc
+        for source_name, fetcher in (
+            ("腾讯", self._fetch_tencent_snapshot),
+            ("东方财富", self._fetch_eastmoney_snapshot),
+            ("新浪", self._fetch_sina_snapshot),
+        ):
+            try:
+                realtime_snapshots.append(await asyncio.to_thread(fetcher, market, cached_symbol))
+            except Exception as exc:
+                realtime_error = exc
+                realtime_errors.append(f"{source_name}:{type(exc).__name__}")
 
-        try:
-            snapshot = await asyncio.to_thread(self._fetch_eastmoney_snapshot, market, cached_symbol)
-            snapshot.notes.append(
-                f"新浪实时接口暂不可用，当前使用东方财富单股行情复核：{type(realtime_error).__name__}"
-            )
+        if realtime_snapshots:
+            snapshot = max(realtime_snapshots, key=lambda item: _quote_timestamp_rank(item.data_as_of))
+            other_sources = [
+                item.source
+                for item in realtime_snapshots
+                if item.source != snapshot.source
+            ]
+            if other_sources:
+                snapshot.notes.append(
+                    "已交叉校验公开行情源，当前展示时间戳最新的实时报价。"
+                )
+            if realtime_errors:
+                snapshot.notes.append(f"部分行情源暂不可用：{', '.join(realtime_errors)}")
             return snapshot
-        except Exception as exc:
-            realtime_error = exc
+
+        if realtime_error is None:
+            realtime_error = RuntimeError("no realtime quote source configured")
 
         if market == "A股":
             try:
                 snapshot = await asyncio.to_thread(self._fetch_realtime_snapshot, market, cached_symbol)
                 snapshot.notes.append(
-                    f"东方财富单股实时接口暂不可用，当前使用 AKShare 实时行情：{type(realtime_error).__name__}"
+                    f"单股实时接口暂不可用，当前使用 AKShare 实时行情：{type(realtime_error).__name__}"
                 )
                 return snapshot
             except Exception as exc:
@@ -133,10 +150,11 @@ class FreeMarketDataProvider:
                 primary_error=realtime_error,
             )
             snapshot.notes.append(
-                f"东方财富实时接口暂不可用，当前使用 yfinance 公开行情复核：{type(realtime_error).__name__}"
+                f"国内实时接口暂不可用，当前使用 yfinance 公开行情复核：{type(realtime_error).__name__}"
             )
             return snapshot
-        except Exception as yf_exc:
+        except Exception as exc:
+            yf_exc = exc
             if not allow_fallback:
                 raise RuntimeError(
                     "公开实时行情接口暂不可用，请稍后重试："
@@ -246,23 +264,68 @@ class FreeMarketDataProvider:
             updated_at=datetime.now(),
         )
 
-    def _read_eastmoney_quote(self, secid: str) -> dict[str, Any]:
-        fields = "f43,f47,f57,f58,f59,f60,f86,f169,f170"
+    def _fetch_tencent_snapshot(self, market: str, symbol: str) -> MarketSnapshot:
+        raw = self._read_tencent_quote(_tencent_code(market, symbol))
+        values = _parse_tencent_values(raw)
+        if len(values) < 33:
+            raise ValueError("invalid Tencent quote payload")
+
+        name = _clean_stock_name(values[1])
+        price = _required_float(values[3], "Tencent latest price")
+        pct_change = _required_float(values[32], "Tencent pct_change")
+        volume = _tencent_volume(market, values, price)
+        data_as_of = _tencent_timestamp(values[30])
+
+        if _is_real_stock_name(name, market, symbol):
+            _remember_display_name(market, symbol, name)
+        else:
+            name = self._resolve_symbol_name(market, symbol)
+
+        return MarketSnapshot(
+            market=market,
+            symbol=symbol,
+            name=name,
+            latest_close=round(price, 3),
+            pct_change=round(pct_change, 2),
+            volume=volume,
+            source=f"Tencent quote {market} {_tencent_code(market, symbol)}",
+            quote_type="realtime",
+            data_as_of=data_as_of,
+            updated_at=datetime.now(),
+        )
+
+    def _read_tencent_quote(self, code: str) -> str:
         request = Request(
-            f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields={fields}",
+            f"https://qt.gtimg.cn/q={code}",
             headers={
-                "Accept": "application/json,text/plain,*/*",
-                "Referer": "https://quote.eastmoney.com/",
+                "Accept": "*/*",
+                "Referer": "https://gu.qq.com/",
                 "User-Agent": "Mozilla/5.0 JunyuResearch/0.1",
             },
         )
+        with urlopen(request, timeout=8) as response:
+            return response.read().decode("gb18030", errors="ignore")
+
+    def _read_eastmoney_quote(self, secid: str) -> dict[str, Any]:
+        fields = "f43,f47,f57,f58,f59,f60,f86,f169,f170"
         last_error: Exception | None = None
-        for _ in range(3):
-            try:
-                with urlopen(request, timeout=8) as response:
-                    return json.loads(response.read().decode("utf-8"))
-            except Exception as exc:
-                last_error = exc
+        headers = {
+            "Accept": "application/json,text/plain,*/*",
+            "Referer": "https://quote.eastmoney.com/",
+            "User-Agent": "Mozilla/5.0 JunyuResearch/0.1",
+        }
+        for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
+            for _ in range(2):
+                cache_bust = int(datetime.now().timestamp() * 1000)
+                request = Request(
+                    f"https://{host}/api/qt/stock/get?secid={secid}&fields={fields}&_={cache_bust}",
+                    headers=headers,
+                )
+                try:
+                    with urlopen(request, timeout=8) as response:
+                        return json.loads(response.read().decode("utf-8"))
+                except Exception as exc:
+                    last_error = exc
         raise ValueError(
             "Eastmoney quote request failed"
             if last_error is None
@@ -1182,6 +1245,63 @@ def _eastmoney_timestamp(value: Any) -> str:
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _tencent_code(market: str, symbol: str) -> str:
+    normalized = normalize_symbol(market, symbol)
+    if market == "港股":
+        return f"hk{normalized}"
+    prefix = "sh" if normalized.startswith("6") else "sz"
+    return f"{prefix}{normalized}"
+
+
+def _parse_tencent_values(raw: str) -> list[str]:
+    match = re.search(r'="(.*)";?\s*$', raw.strip())
+    if not match:
+        raise ValueError("empty Tencent quote payload")
+    values = [item.strip() for item in match.group(1).split("~")]
+    if not values or not any(values):
+        raise ValueError("empty Tencent quote values")
+    return values
+
+
+def _tencent_timestamp(value: str) -> str:
+    text = str(value or "").strip()
+    for fmt in ("%Y/%m/%d %H:%M:%S", "%Y%m%d%H%M%S"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _tencent_volume(market: str, values: list[str], price: float) -> float:
+    if market == "港股":
+        return _optional_float(values, 36) or _optional_float(values, 6) or 0.0
+
+    packed = values[35].split("/") if len(values) > 35 else []
+    raw_volume = _safe_float(packed[1]) if len(packed) >= 2 else _optional_float(values, 6)
+    amount = _safe_float(packed[2]) if len(packed) >= 3 else None
+    if not raw_volume or raw_volume <= 0:
+        return 0.0
+    if amount and price > 0:
+        ratio = amount / (price * raw_volume)
+        if ratio > 50:
+            return raw_volume * 100
+    return raw_volume
+
+
+def _quote_timestamp_rank(value: str) -> datetime:
+    text = str(value or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y%m%d%H%M%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return datetime.min
+
+
 def _sina_code(market: str, symbol: str) -> str:
     normalized = normalize_symbol(market, symbol)
     if market == "港股":
@@ -1198,6 +1318,29 @@ def _parse_sina_values(raw: str) -> list[str]:
     if not values or not any(values):
         raise ValueError("empty Sina quote values")
     return values
+
+
+def _required_float(value: Any, field_name: str) -> float:
+    number = _safe_float(value)
+    if number is None or isnan(number):
+        raise ValueError(f"missing {field_name}")
+    return number
+
+
+def _optional_float(values: list[str], index: int) -> float | None:
+    if index >= len(values):
+        return None
+    return _safe_float(values[index])
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if isnan(number):
+        return None
+    return number
 
 
 def _yfinance_ticker(market: str, symbol: str) -> str:

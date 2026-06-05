@@ -445,7 +445,7 @@ export function HomeExperience() {
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200/45 bg-teal-300/22 px-3 py-1 font-medium text-teal-50">
                 <BadgeCheck size={14} />
-                量化模型 × DeepSeek
+                金融量化算法 × DeepSeek
               </span>
               <span className="inline-flex items-center rounded-full border border-teal-200/45 bg-teal-300/22 px-3 py-1 font-medium text-teal-50">
                 10位金融专家提供专业建议
@@ -465,7 +465,7 @@ export function HomeExperience() {
                 <span className="block">从模型到投委会完整生成。</span>
               </h1>
               <p className="mt-3 max-w-[660px] text-sm leading-6 text-white/78 md:mt-6 md:text-lg md:leading-8">
-                输入 A 股或港股标的，系统先用量化模型生成趋势、动量、波动与风险底稿，再交由 10 位金融专业角色逐轮质询、修正和收敛，输出带图表的专业报告。
+                输入 A 股或港股标的，系统先用金融量化算法生成趋势、动量、波动与风险底稿，再交由 10 位金融专业角色逐轮质询、修正和收敛，输出带图表的专业报告。
               </p>
               <div className="mt-5 flex flex-wrap gap-3 md:mt-8">
                 <a
@@ -491,8 +491,8 @@ export function HomeExperience() {
               <div className="space-y-2 pt-3 md:space-y-4 md:pt-5">
                 {[
                   {
-                    title: "快速筛出关键量化信号",
-                    body: "趋势、动量、波动、量价与风险先形成底稿",
+                    title: "金融量化算法先出底稿",
+                    body: "趋势、动量、波动、量价与风险先沉淀为核心证据",
                   },
                   {
                     title: "把A/H股信息整理成证据链",
