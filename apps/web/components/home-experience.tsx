@@ -23,7 +23,7 @@ import { RolePortrait } from "@/components/role-portrait";
 import type { Depth, Market, StockSearchResult } from "@/lib/types";
 
 const homeSectionIds = ["start", "process", "committee-preview", "research-task"];
-const homeSnapBreakpoint = "(min-width: 520px)";
+const homeSnapBreakpoint = "(min-width: 901px)";
 const wheelSnapThreshold = 18;
 
 const steps = [
@@ -235,6 +235,7 @@ export function HomeExperience() {
     setSymbolQuery("");
     setRemoteSuggestions([]);
     setSearchError(null);
+    setError(null);
     setIsSearchingStocks(false);
     setSelectedStock(null);
   };
@@ -244,6 +245,7 @@ export function HomeExperience() {
     setSymbolQuery("");
     setRemoteSuggestions([]);
     setSearchError(null);
+    setError(null);
     setIsSearchingStocks(false);
     setSelectedStock(stock);
   };
@@ -478,9 +480,7 @@ export function HomeExperience() {
               </div>
             </div>
 
-            <div
-              className="rounded-lg border border-white/14 bg-black/32 p-3 backdrop-blur-sm md:p-5"
-            >
+            <div className="mobile-hero-advantage-card rounded-lg border border-white/14 bg-black/32 p-3 backdrop-blur-sm md:p-5">
               <div className="flex items-center justify-between border-b border-white/12 pb-3 md:pb-4">
                 <div>
                   <div className="text-xs text-white/58 md:text-sm">核心优势</div>
@@ -754,10 +754,10 @@ export function HomeExperience() {
                   <div className="mt-5 rounded-lg bg-[var(--bg-soft)] p-4">
                     <div className="flex items-end justify-between gap-3">
                       {[
-                        ["趋势", "74%", "h-24", "bg-red-500/80"],
+                        ["趋势", "74%", "h-24", "bg-emerald-500/80"],
                         ["动量", "68%", "h-20", "bg-red-400/80"],
                         ["波动", "61%", "h-16", "bg-amber-400/90"],
-                        ["风险", "46%", "h-12", "bg-emerald-500/80"],
+                        ["风险", "46%", "h-12", "bg-red-500/80"],
                       ].map(([label, value, height, color]) => (
                         <div key={label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
                           <div className="flex h-28 w-full items-end rounded-md bg-white px-2 pb-2">
@@ -906,11 +906,20 @@ export function HomeExperience() {
                         setSelectedStock(null);
                         setRemoteSuggestions([]);
                         setSearchError(null);
+                        setError(null);
                         setIsSearchingStocks(nextQuery.trim().length > 0);
                       }}
                       className="w-full rounded-lg border-2 border-teal-200 bg-teal-50/35 py-3 pl-11 pr-3 text-base font-medium text-[var(--ink)] shadow-[0_0_0_4px_oklch(0.95_0.045_180_/_0.42)] placeholder:font-medium placeholder:text-[var(--ink-muted)] focus:border-teal-300 focus:outline-none"
                       placeholder={`输入公司名、简称或代码，如 ${marketHint.query} / ${marketHint.code}`}
                     />
+                    {!symbolQuery ? (
+                      <span
+                        aria-hidden="true"
+                        className="mobile-search-placeholder pointer-events-none absolute left-11 right-3 top-1/2 hidden -translate-y-1/2 truncate text-sm font-medium text-[var(--ink-muted)]"
+                      >
+                        输入公司名、简称或代码
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <span className="text-[var(--ink-muted)]">快速示例</span>
@@ -972,6 +981,7 @@ export function HomeExperience() {
                               setSymbolQuery("");
                               setRemoteSuggestions([]);
                               setSearchError(null);
+                              setError(null);
                               setIsSearchingStocks(false);
                               setMarket(stock.market);
                             }}

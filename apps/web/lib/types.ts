@@ -81,15 +81,73 @@ export interface QuantIndicator {
   detail: string;
 }
 
+export interface DataQualityCheck {
+  key: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  score: number;
+  detail: string;
+}
+
+export interface EvidenceFact {
+  category: "财报" | "公告" | "新闻" | "行业" | "行情" | "数据质量";
+  title: string;
+  summary: string;
+  source: string;
+  status: "confirmed" | "partial" | "unavailable";
+  confidence: number;
+  published_at: string | null;
+  effective_at: string | null;
+  available_at: string | null;
+  url: string | null;
+}
+
+export interface CrossSectionFactor {
+  key: string;
+  label: string;
+  value: number | string;
+  unit: string;
+  percentile: number | null;
+  direction: "positive" | "negative" | "neutral" | "risk";
+  detail: string;
+}
+
+export interface CrossSectionContext {
+  market: Market;
+  symbol: string;
+  name: string;
+  data_as_of: string;
+  universe_size: number;
+  peers_evaluated: number;
+  industry_name: string | null;
+  rps_20: number | null;
+  rps_60: number | null;
+  industry_relative_strength: number | null;
+  liquidity_rank: number | null;
+  crowding_score: number;
+  factors: CrossSectionFactor[];
+  facts: string[];
+}
+
+export interface ValidationCheck {
+  key: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+}
+
 export interface QuantBrief {
   market: Market;
   symbol: string;
   name: string;
   source: string;
   model_name: string;
+  algorithm_version: string;
   generated_at: string;
   data_as_of: string;
   coverage_days: number;
+  data_quality_score: number;
+  data_quality_grade: "高" | "中" | "低" | "待确认";
   trend_score: number;
   momentum_score: number;
   volatility_score: number;
@@ -97,8 +155,12 @@ export interface QuantBrief {
   risk_score: number;
   evidence_score: number;
   signal_label: "偏多观察" | "中性观察" | "偏空观察" | "数据待确认";
+  data_quality_checks: DataQualityCheck[];
   indicators: QuantIndicator[];
   facts: string[];
+  fact_chain: EvidenceFact[];
+  cross_section: CrossSectionContext | null;
+  validation_checks: ValidationCheck[];
   limitations: string[];
 }
 

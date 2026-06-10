@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 from datetime import datetime
 from typing import AsyncIterator
 
@@ -23,7 +24,7 @@ SCRIPT = [
         "role": "首席策略官",
         "event_type": "开场",
         "title": "确认会议边界",
-        "content": "各位先不要急着给结论。本次只做 A 股与港股公开信息研究，先把事实底稿立住，再允许多空团队争论。",
+        "content": "本轮先确认研究边界：该标的进入 A/H股量化研究流程，量化底稿作为第一层输入，所有结论必须经过多空质询、基本面复核和风控约束后再写入报告。",
         "stance": "neutral",
         "reply_to": None,
         "target_role": None,
@@ -34,7 +35,7 @@ SCRIPT = [
         "role": "数据助理",
         "event_type": "提交底稿",
         "title": "同步实时行情数据",
-        "content": "我先提交行情底稿：同步实时价、涨跌幅、成交量和刷新时间。数据口径足以支撑第一轮模型判断，异常波动会交给量化和风控复核。",
+        "content": "已提交行情底稿：实时价、涨跌幅、成交量、刷新时间和样本覆盖进入会议记录。后续若出现价格与历史序列偏离，将在报告中单列数据质量提示。",
         "stance": "neutral",
         "reply_to": 1,
         "target_role": "首席策略官",
@@ -45,7 +46,7 @@ SCRIPT = [
         "role": "量化研究员",
         "event_type": "量化初筛",
         "title": "运行量化交易模型初筛",
-        "content": "我先跑量化底稿：趋势、动量、波动、量价、RPS近似强弱、突破距离和回撤约束同步看。模型只给证据权重，不替投委会做结论。",
+        "content": "量化底稿先拆为趋势、动量、波动、量价、相对强弱、突破距离和回撤约束。模型只判断证据强弱，不直接替代投委会结论。",
         "stance": "neutral",
         "reply_to": 2,
         "target_role": "数据助理",
@@ -56,7 +57,7 @@ SCRIPT = [
         "role": "技术分析师",
         "event_type": "初评",
         "title": "观察量价结构",
-        "content": "从技术面看，价格变化能反映短期资金态度，但我不把它直接解释为趋势成立，还需要成交量和关键位置配合。",
+        "content": "技术面只回答结构是否成立：突破需要成交跟随，回撤需要关键区间承接。否则价格强势只能按短期波动处理，不能直接写成趋势结论。",
         "stance": "bull",
         "reply_to": 3,
         "target_role": "量化研究员",
@@ -67,7 +68,7 @@ SCRIPT = [
         "role": "基本面分析师",
         "event_type": "保留意见",
         "title": "要求补充基本面证据",
-        "content": "我先把基本面验证线立起来：价格动作只能说明预期变化，真正能抬高研究评级的是业务质量、盈利弹性、估值分位、行业景气和公告事实同向。",
+        "content": "基本面验证线包括营收、利润、现金流、ROE、负债率、估值分位和公告事实。价格信号若不能被这些证据承接，结论强度必须下调。",
         "stance": "neutral",
         "reply_to": 4,
         "target_role": "技术分析师",
@@ -78,7 +79,7 @@ SCRIPT = [
         "role": "多头研究员",
         "event_type": "主辩建模",
         "title": "建立上行证据链",
-        "content": "我把多头假设摊开：趋势延续、动量扩散、量价确认和催化预期必须形成闭环。空头要反驳，请直接指出哪一环已经断，不要只拿波动两个字否定全部证据。",
+        "content": "多头假设建立在趋势延续、成交确认、相对强弱改善和催化验证四个条件上。空头若反驳，请指出哪一环已经断裂，不能只用波动否定全部证据。",
         "stance": "bull",
         "reply_to": 5,
         "target_role": "基本面分析师",
@@ -89,7 +90,7 @@ SCRIPT = [
         "role": "空头研究员",
         "event_type": "正面反证",
         "title": "拆解多头证据链",
-        "content": "我不同意多头把链条说得这么顺。价格强势可能是拥挤交易，成交放大也可能是高位分歧换手。盈利兑现、估值空间和催化强度没有同步抬升前，上行假设必须降级。",
+        "content": "空头反证集中在三点：价格强势是否只是拥挤交易，成交放大是否是高位换手，估值与盈利是否能承接。任一项不成立，多头结论都要降级。",
         "stance": "bear",
         "reply_to": 6,
         "target_role": "多头研究员",
@@ -100,7 +101,7 @@ SCRIPT = [
         "role": "多头研究员",
         "event_type": "逐条反驳",
         "title": "回应空头反证",
-        "content": "我接受空头对估值和催化剂的追问，但不接受把强势全部打成噪音。只要相对强弱、量价配合和回撤约束没有同时恶化，多头主线就不能被提前判死。",
+        "content": "多头回应空头质疑：估值和催化需要验证，但强势信号不能被简单归为噪音。只要相对强弱、量价配合和回撤约束没有同步恶化，上行假设仍可保留。",
         "stance": "bull",
         "reply_to": 7,
         "target_role": "空头研究员",
@@ -111,7 +112,7 @@ SCRIPT = [
         "role": "基本面分析师",
         "event_type": "证据裁判",
         "title": "列出胜负手与验证线",
-        "content": "我先当裁判：多头必须证明强势不是一次性资金行为，空头必须证明风险不是短期噪音。双方都把公告、盈利质量、估值分位和行业比较纳入同一套验证线。",
+        "content": "基本面裁判线明确：多头必须证明强势不是一次性资金行为，空头必须证明风险不是短期噪音。公告、盈利质量、估值分位和行业比较统一进入验证表。",
         "stance": "neutral",
         "reply_to": 8,
         "target_role": "多头研究员 / 空头研究员",
@@ -122,7 +123,7 @@ SCRIPT = [
         "role": "空头研究员",
         "event_type": "压力测试",
         "title": "压测下行情景",
-        "content": "我继续压测：如果量能回落、相对强弱失速或价格跌回关键通道，多头证据链怎么处理？报告必须单列估值压力、流动性约束和回撤情景，不能只写漂亮路径。",
+        "content": "空头压力测试要求回答：若量能回落、相对强弱失速或价格跌回关键通道，多头证据链如何处理。报告必须单列估值压力、流动性约束和回撤情景。",
         "stance": "bear",
         "reply_to": 9,
         "target_role": "多头研究员",
@@ -133,7 +134,7 @@ SCRIPT = [
         "role": "量化研究员",
         "event_type": "量化裁判",
         "title": "复核强弱与突破信号",
-        "content": "我用模型做裁判：趋势、RPS近似强弱、突破距离、波动和成交若出现背离，多头与空头都要降权。量化信号只负责给出可质询、可复核的事实底稿。",
+        "content": "量化裁判口径：趋势、相对强弱、突破距离、波动和成交若出现背离，多头与空头都要降权。量化信号只提供可质询、可复核的事实底稿。",
         "stance": "neutral",
         "reply_to": 10,
         "target_role": "多头研究员 / 空头研究员",
@@ -144,7 +145,7 @@ SCRIPT = [
         "role": "风控负责人",
         "event_type": "插话",
         "title": "压实风险情景",
-        "content": "这里必须插一句风控口径：涨跌幅、波动和流动性要放在同一个情景表里，不允许单一强信号被放大为结论。若回撤扩大或成交萎缩，信息完整指数必须下调。",
+        "content": "风控口径必须压实：涨跌幅、波动和流动性要放在同一个情景表里，不允许单一强信号被放大为结论。若回撤扩大或成交萎缩，信息完整指数必须下调。",
         "stance": "risk",
         "reply_to": 11,
         "target_role": "量化研究员",
@@ -155,7 +156,7 @@ SCRIPT = [
         "role": "风控负责人",
         "event_type": "风控修正",
         "title": "下调结论强度",
-        "content": "我建议把结论强度和证据等级分开：量化强势可以提高跟踪优先级，但风险边界必须同步写入，避免把研究建议误读成交易指令。",
+        "content": "结论强度和证据等级需要分开：量化强势可以提高跟踪优先级，但风险边界必须同步写入，避免把研究建议误读成交易指令。",
         "stance": "risk",
         "reply_to": 10,
         "target_role": "空头研究员",
@@ -166,7 +167,7 @@ SCRIPT = [
         "role": "组合经理",
         "event_type": "收敛",
         "title": "压缩分歧",
-        "content": "我听到的共识是：多头给出跟踪理由，空头压测失效条件，风控限定风险边界。最终报告要沉淀专业研究结论、跟踪条件和风险触发线。",
+        "content": "组合经理收敛口径：多头给出跟踪理由，空头压测失效条件，风控限定风险边界。最终报告要沉淀专业研究结论、跟踪条件和风险触发线。",
         "stance": "decision",
         "reply_to": 13,
         "target_role": "风控负责人",
@@ -177,7 +178,7 @@ SCRIPT = [
         "role": "首席策略官",
         "event_type": "确认口径",
         "title": "确认投委会表述边界",
-        "content": "我确认最终口径：报告要给出清晰研究判断、关键假设、分歧来源和风险边界，同时保持研究辅助属性，避免被理解为直接交易指令。",
+        "content": "最终表述边界确认：报告要给出清晰研究判断、关键假设、分歧焦点和风险边界，同时保持研究辅助属性，避免被理解为直接交易指令。",
         "stance": "decision",
         "reply_to": 14,
         "target_role": "组合经理",
@@ -188,7 +189,7 @@ SCRIPT = [
         "role": "报告编辑",
         "event_type": "定稿",
         "title": "生成机构式研究报告",
-        "content": "我将按机构研报格式整理：执行摘要、量化底稿、多空分歧、关键判断、研究建议、跟踪条件和风险边界，合规提示作为附注处理。",
+        "content": "报告按机构研报格式整理：执行摘要、量化底稿、多空分歧、关键判断、研究建议、跟踪条件和风险边界，合规提示作为附注处理。",
         "stance": "decision",
         "reply_to": 15,
         "target_role": "首席策略官",
@@ -202,7 +203,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "基本面分析师",
         "event_type": "估值质询",
         "title": "追问盈利与估值承接",
-        "content": "我补一刀基本面问题：如果多头说估值能修复，就要解释利润率、收入可见度和行业景气谁来承接；如果空头说估值贵，也要给出同业比较和安全边际缺口。",
+        "content": "基本面补充质询：若多头认为估值可修复，需要解释利润率、收入可见度和行业景气由谁承接；若空头认为估值偏贵，也要给出同业比较和安全边际缺口。",
         "stance": "neutral",
         "reply_to": None,
         "target_role": "多头研究员 / 空头研究员",
@@ -213,7 +214,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "空头研究员",
         "event_type": "反击多头",
         "title": "否定单一强势叙事",
-        "content": "多头的问题是把价格强势、资金关注和基本面改善混成一件事。没有公告、订单、利润率或行业β的交叉验证，所谓催化路径只是情绪外推。",
+        "content": "空头反击重点：价格强势、资金关注和基本面改善不能混为一谈。没有公告、订单、利润率或行业景气的交叉验证，催化路径只能按待验证假设处理。",
         "stance": "bear",
         "reply_to": None,
         "target_role": "多头研究员",
@@ -224,7 +225,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "多头研究员",
         "event_type": "正面回击",
         "title": "拆解空头过度保守",
-        "content": "空头把所有不确定性都当成否定项，这也不专业。研究不是等所有证据百分百齐全才行动，而是判断边际变化、赔率结构和失效条件是否足够清晰。",
+        "content": "多头回击口径：空头不能把所有不确定性都当成否定项。研究重点不是等待证据百分百齐全，而是判断边际变化、赔率结构和失效条件是否足够清晰。",
         "stance": "bull",
         "reply_to": None,
         "target_role": "空头研究员",
@@ -235,7 +236,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "量化研究员",
         "event_type": "因子复核",
         "title": "拆分趋势与噪音",
-        "content": "我把分歧拆成因子：趋势强不等于胜率高，波动高也不等于必须看空。关键是动量、成交确认、回撤约束和证据覆盖是否同向，不同向就降低信息完整指数。",
+        "content": "量化复核把分歧拆成因子：趋势强不等于胜率高，波动高也不等于必须看空。关键看动量、成交确认、回撤约束和证据覆盖是否同向。",
         "stance": "neutral",
         "reply_to": None,
         "target_role": "多头研究员 / 空头研究员",
@@ -246,7 +247,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "技术分析师",
         "event_type": "结构复核",
         "title": "识别假突破风险",
-        "content": "我从图形结构补充：突破如果没有量能跟随和回撤承接，就是假突破风险；但如果回踩不破关键区间，空头也不能把正常换手解释成趋势反转。",
+        "content": "技术结构补充：突破如果没有量能跟随和回撤承接，就是假突破风险；但若回踩不破关键区间，空头也不能把正常换手解释成趋势反转。",
         "stance": "neutral",
         "reply_to": None,
         "target_role": "多头研究员 / 空头研究员",
@@ -257,7 +258,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "空头研究员",
         "event_type": "压力加码",
         "title": "质疑催化兑现",
-        "content": "我继续追问：催化如果只是市场想象，没有时间表、业绩传导和公告验证，就不能抬高结论等级。多头必须给出触发条件，否则报告只能写观察。",
+        "content": "空头继续追问：催化若只是市场想象，没有时间表、业绩传导和公告验证，就不能抬高结论等级。多头必须给出触发条件，否则报告只能写观察。",
         "stance": "bear",
         "reply_to": None,
         "target_role": "多头研究员",
@@ -268,7 +269,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "多头研究员",
         "event_type": "补强假设",
         "title": "明确上行触发线",
-        "content": "可以，我把触发线写清楚：相对强弱维持、量价不背离、回撤不破核心区间，并且公告或行业数据继续验证时，上行假设才升级；否则降回观察。",
+        "content": "多头补强触发线：相对强弱维持、量价不背离、回撤不破核心区间，并且公告或行业数据继续验证时，上行假设才升级；否则降回观察。",
         "stance": "bull",
         "reply_to": None,
         "target_role": "空头研究员",
@@ -279,7 +280,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "基本面分析师",
         "event_type": "二次裁判",
         "title": "压实基本面验证表",
-        "content": "我把双方争点压到验证表：多头需要证明增长、利润率和估值承接能形成同向链条；空头需要证明风险不是短期波动。谁拿不出证据，谁的权重就下调。",
+        "content": "基本面二次裁判：多头需要证明增长、利润率和估值承接能形成同向链条；空头需要证明风险不是短期波动。谁拿不出证据，谁的权重就下调。",
         "stance": "neutral",
         "reply_to": None,
         "target_role": "多头研究员 / 空头研究员",
@@ -304,10 +305,11 @@ class DecisionRoomEngine:
         self.repository.update_session_status(session.id, "running")
 
         recent_context = [
-            f"{event.sequence}. {event.role}（{event.event_type}）：{event.content}"
+            f"{event.sequence}. {event.role}（{event.event_type}）：{_strip_user_visible_source_noise(event.content)}"
             for event in self.repository.list_events(session.id)
         ]
         quant_summary = brief_summary(quant_brief)
+        evidence_digest = _committee_evidence_digest(quant_brief)
         meeting_script = _script_for_session(session.id)
         for sequence, item in enumerate(meeting_script, start=1):
             if sequence < start_sequence:
@@ -329,9 +331,11 @@ class DecisionRoomEngine:
                 symbol=session.symbol,
                 snapshot_summary=_snapshot_summary(snapshot),
                 quant_brief_summary=quant_summary,
+                evidence_digest=evidence_digest,
                 recent_context="\n".join(recent_context[-4:]),
                 target_role=item["target_role"],
             )
+            content = _strip_user_visible_source_noise(content)
             event = DecisionEvent(
                 session_id=session.id,
                 sequence=sequence,
@@ -412,6 +416,37 @@ def _script_for_session(session_id: str) -> list[dict[str, object]]:
     return [item for _, item in sorted(selected_slots, key=lambda slot: slot[0])]
 
 
+def _strip_user_visible_source_noise(text: str) -> str:
+    cleaned = text
+    cleaned = re.sub(
+        r"[，,]?\s*来源[:：]?\s*(?:AKShare|Eastmoney|Tencent|Sina|yfinance|PublicEvidenceCrawler|东方财富)[^)]*\)",
+        ")",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"[，,]?\s*来源[:：]?\s*(?:AKShare|Eastmoney|Tencent|Sina|yfinance|PublicEvidenceCrawler|东方财富)[^；。,\n]*(?=[；。,\n]|$)",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\b(?:AKShare|Eastmoney|Tencent|Sina|yfinance|PublicEvidenceCrawler)\s+[A-Za-z0-9_().,/\- ]+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\bstock_[A-Za-z0-9_().,/\- ]+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = cleaned.replace("未从公开接口取得", "暂未进入本轮可用指标")
+    cleaned = cleaned.replace("公开接口暂未返回", "本轮暂未取得")
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+
 def _resolve_reply_to(
     script: list[dict[str, object]],
     current_index: int,
@@ -439,43 +474,64 @@ def _enrich_content(
     role: str,
 ) -> str:
     if phase == "事实底稿" and role == "数据助理":
+        quality = _quality_digest(quant_brief)
         return (
             f"{content} 当前标的 {snapshot.name} 实时价约 {snapshot.latest_close}，"
             f"涨跌幅 {snapshot.pct_change}%，行情刷新时间 {snapshot.data_as_of}。"
+            f"{quality}"
         )
     if role == "量化研究员" and quant_brief:
         return (
             f"{content} 当前量化底稿：{quant_brief.signal_label}，"
             f"趋势 {quant_brief.trend_score}/100，动量 {quant_brief.momentum_score}/100，"
-            f"量价 {quant_brief.volume_score}/100，风险约束 {quant_brief.risk_score}/100。"
-            f"我只把它作为研究线索交给投委会质询。"
+            f"波动 {quant_brief.volatility_score}/100，量价 {quant_brief.volume_score}/100，"
+            f"风险约束 {quant_brief.risk_score}/100。"
+            f"因子明细：{_indicator_digest(quant_brief, ('rps_proxy', 'breakout_60', 'macd', 'rsi', 'atr'))}"
+            f"验证状态：{_validation_digest(quant_brief)}。"
         )
     if role == "技术分析师" and quant_brief:
-        return f"{content} 我会重点复核均线、MACD、RSI、ATR 和成交量变化，避免单一指标放大。"
+        return (
+            f"{content} 技术复核重点："
+            f"{_indicator_digest(quant_brief, ('ma_gap', 'macd', 'rsi', 'boll', 'volume_ratio'))}"
+            "突破有效性、成交配合和回撤区间需要放在同一张验证表里。"
+        )
+    if role == "基本面分析师" and quant_brief:
+        return (
+            f"{content} 基本面裁判线："
+            f"{_indicator_digest(quant_brief, ('fund_revenue', 'fund_profit', 'fund_cashflow', 'fund_gross_margin', 'fund_roe', 'fund_debt_ratio', 'fund_valuation_percentile'))}"
+            f"事件证据：{_fact_digest(quant_brief, limit=2)}。"
+            "多头要证明盈利与估值能承接，空头要证明风险不是短期波动。"
+        )
     if role == "多头研究员" and quant_brief:
         return (
-            f"{content} 多头引用的事实底稿是：{quant_brief.signal_label}，"
-            f"趋势 {quant_brief.trend_score}/100，动量 {quant_brief.momentum_score}/100，"
-            f"量价 {quant_brief.volume_score}/100；"
-            f"客观事实包括：{'；'.join(quant_brief.facts[:2])}。"
-            "我的上行假设只在这些事实继续成立时保留。"
+            f"{content} 多头证据链先看三件事：趋势 {quant_brief.trend_score}/100、"
+            f"动量 {quant_brief.momentum_score}/100、量价 {quant_brief.volume_score}/100。"
+            f"支撑材料：{_indicator_digest(quant_brief, ('rps_proxy', 'volume_ratio', 'event_sentiment', 'fund_profit', 'fund_roe'))}"
+            f"事实钩子：{_fact_digest(quant_brief, limit=2)}。"
+            "空头如果要否定上行假设，请指出趋势、量能或催化链条哪一环已经断裂。"
         )
     if role == "空头研究员" and quant_brief:
         return (
-            f"{content} 空头引用的反证底稿是：风险约束 {quant_brief.risk_score}/100，"
-            f"波动 {quant_brief.volatility_score}/100，证据覆盖 {quant_brief.evidence_score}/100；"
-            f"需要质疑的客观事实包括：{'；'.join(quant_brief.facts[2:5])}。"
-            "任何结论都必须写明失效条件和待验证项。"
+            f"{content} 空头压测集中在风险约束 {quant_brief.risk_score}/100、"
+            f"波动 {quant_brief.volatility_score}/100、信息完整指数 {quant_brief.evidence_score}/100。"
+            f"反证材料：{_indicator_digest(quant_brief, ('atr', 'drawdown_60', 'gap', 'event_risk', 'fund_debt_ratio', 'fund_valuation_percentile'))}"
+            f"质量缺口：{_quality_digest(quant_brief)}。"
+            "多头必须证明强势不是拥挤交易，也不是公告与盈利证据不足时的情绪外推。"
         )
     if role == "风控负责人" and quant_brief:
         return (
-            f"{content} 量化底稿证据覆盖度 {quant_brief.evidence_score}/100，"
-            "我会结合波动、回撤和成交活跃度重新校准信息完整指数与触发条件。"
+            f"{content} 风控口径：风险约束 {quant_brief.risk_score}/100，"
+            f"波动 {quant_brief.volatility_score}/100，信息完整指数 {quant_brief.evidence_score}/100，"
+            f"数据质量 {quant_brief.data_quality_score}/100。"
+            f"风险指标：{_indicator_digest(quant_brief, ('atr', 'boll', 'drawdown_60', 'event_risk'))}"
+            "报告必须把触发线、失效线和信息缺口分开写。"
         )
     if role == "组合经理" and quant_brief:
         return (
-            f"{content} 我会把量化观察 {quant_brief.signal_label} 作为输入，"
-            "再根据多空证据和风控约束收敛表述。"
+            f"{content} 组合层面将量化观察 {quant_brief.signal_label} 作为输入，"
+            f"结合信息完整指数 {quant_brief.evidence_score}/100、"
+            f"数据质量 {quant_brief.data_quality_score}/100 和多空分歧，"
+            "收敛为研究建议、跟踪条件和风险边界。"
         )
     return content
 
@@ -484,4 +540,106 @@ def _snapshot_summary(snapshot: MarketSnapshot) -> str:
     return (
         f"{snapshot.name} 实时价 {snapshot.latest_close}，涨跌幅 {snapshot.pct_change}%，"
         f"行情刷新时间 {snapshot.data_as_of}。"
+    )
+
+
+def _committee_evidence_digest(quant_brief: QuantBrief | None) -> str:
+    if not quant_brief:
+        return "量化底稿暂未生成，角色只能围绕行情事实和数据缺口发言。"
+    parts = [
+        (
+            f"模型信号 {quant_brief.signal_label}; 趋势 {quant_brief.trend_score}/100; "
+            f"动量 {quant_brief.momentum_score}/100; 波动 {quant_brief.volatility_score}/100; "
+            f"量价 {quant_brief.volume_score}/100; 风险 {quant_brief.risk_score}/100; "
+            f"信息完整指数 {quant_brief.evidence_score}/100; "
+            f"数据质量 {quant_brief.data_quality_score}/100。"
+        ),
+        f"关键因子：{_indicator_digest(quant_brief, _core_indicator_keys())}",
+        f"事实链：{_fact_digest(quant_brief, limit=5)}",
+        f"数据质量：{_quality_digest(quant_brief)}",
+        f"验证：{_validation_digest(quant_brief)}",
+    ]
+    return " ".join(part for part in parts if part).strip()[:1800]
+
+
+def _core_indicator_keys() -> tuple[str, ...]:
+    return (
+        "rps_proxy",
+        "rps_20",
+        "rps_60",
+        "crowding",
+        "fund_revenue",
+        "fund_profit",
+        "fund_roe",
+        "fund_debt_ratio",
+        "fund_valuation_percentile",
+        "event_sentiment",
+        "event_risk",
+        "atr",
+        "drawdown_60",
+    )
+
+
+def _indicator_digest(quant_brief: QuantBrief, keys: tuple[str, ...]) -> str:
+    by_key = {indicator.key: indicator for indicator in quant_brief.indicators}
+    pieces: list[str] = []
+    for key in keys:
+        indicator = by_key.get(key)
+        if not indicator:
+            continue
+        value = f"{indicator.value}{indicator.unit}".strip()
+        detail = indicator.detail.strip()
+        if len(detail) > 56:
+            detail = f"{detail[:56]}..."
+        direction = _indicator_direction_text(indicator.direction)
+        pieces.append(f"{indicator.label}={value}（{direction}，{detail}）")
+    return "；".join(pieces[:7]) or "对应因子暂未返回，需降低该维度表达强度"
+
+
+def _indicator_direction_text(direction: str) -> str:
+    return {
+        "positive": "正向",
+        "negative": "负向",
+        "neutral": "中性",
+        "risk": "风险",
+    }.get(direction, "中性")
+
+
+def _fact_digest(quant_brief: QuantBrief, *, limit: int) -> str:
+    facts = [fact for fact in quant_brief.facts if fact]
+    if not facts and quant_brief.fact_chain:
+        facts = [
+            f"{fact.category}:{fact.title}，{fact.summary}"
+            for fact in quant_brief.fact_chain
+            if fact.status != "unavailable"
+        ]
+    return "；".join(facts[:limit]) if facts else "暂无可确认事实，必须把信息缺口写入判断"
+
+
+def _quality_digest(quant_brief: QuantBrief | None) -> str:
+    if not quant_brief:
+        return "数据质量待量化底稿生成后确认。"
+    checks = [
+        check
+        for check in quant_brief.data_quality_checks
+        if check.status in {"warn", "fail"} or check.key in {"fact_chain_coverage", "evidence_factor_layer"}
+    ]
+    if not checks:
+        return "主要数据质量检查通过。"
+    pieces = [
+        f"{check.label}{check.score}/100:{check.detail}"
+        for check in checks[:3]
+    ]
+    return "；".join(pieces)
+
+
+def _validation_digest(quant_brief: QuantBrief | None) -> str:
+    if not quant_brief or not quant_brief.validation_checks:
+        return "验证套件暂未返回"
+    priority = sorted(
+        quant_brief.validation_checks,
+        key=lambda check: {"fail": 0, "warn": 1, "pass": 2}.get(check.status, 3),
+    )
+    return "；".join(
+        f"{check.label}:{check.status}-{check.detail}" for check in priority[:4]
     )

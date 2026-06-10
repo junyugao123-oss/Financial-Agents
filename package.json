@@ -7,13 +7,33 @@
   ],
   "scripts": {
     "dev": "npm run dev:api & npm run dev:web",
-    "dev:web": "npm --workspace apps/web run dev",
-    "dev:api": "cd services/api && ${PYTHON:-python3} -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:web": "API_PROXY_TARGET=${API_PROXY_TARGET:-http://localhost:8000} npm --workspace apps/web run dev",
+    "dev:api": "cd services/api && ${PYTHON:-python3} -m uvicorn app.main:app --reload --host 0.0.0.0 --port ${API_PORT:-8000}",
     "lint": "npm --workspace apps/web run lint",
     "typecheck": "npm --workspace apps/web run typecheck",
     "test": "npm run test:api",
-    "test:api": "cd services/api && ${PYTHON:-python3} -m pytest",
+    "test:api": "cd services/api && ../../scripts/run_python.sh -m pytest",
+    "verify": "bash scripts/quality_gate.sh",
+    "verify:smoke": "RUN_SMOKE=1 bash scripts/quality_gate.sh",
+    "secret:scan": "bash scripts/audit_repo_hygiene.sh",
+    "algo:audit": "bash scripts/run_python.sh scripts/audit_quant_safety.py",
+    "data:validate": "bash scripts/run_python.sh scripts/validate_market_data.py",
+    "mobile:audit": "bash scripts/run_python.sh scripts/audit_mobile_layout.py",
+    "test:mobile": "bash scripts/test_mobile_e2e.sh",
+    "graph:index": "codegraph init -i .",
+    "graph:status": "codegraph status .",
+    "graph:sync": "codegraph sync .",
+    "graph:affected": "git diff --name-only --diff-filter=ACMR HEAD | codegraph affected --path . --stdin",
+    "graph:guard": "bash scripts/codegraph_guard.sh",
+    "memory:bootstrap": "bash scripts/mempalace_bootstrap.sh",
+    "memory:mine": "bash scripts/mempalace_mine.sh",
+    "memory:wake": "bash scripts/mempalace_wake.sh",
+    "memory:search": "bash scripts/mempalace_search.sh",
+    "memory:status": "mempalace --palace .mempalace/palace status",
     "build": "npm --workspace apps/web run build",
     "smoke": "bash scripts/smoke.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
   }
 }

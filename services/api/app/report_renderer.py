@@ -39,10 +39,11 @@ def render_report(
             title="执行摘要",
             status="ready",
             content=(
-                f"本次研究对象为 {snapshot.name}，行情刷新时间 {snapshot.data_as_of}。"
-                f"实时价约 {snapshot.latest_close}，区间变动参考为 {snapshot.pct_change}%。"
-                f"投委会形成的研究结论为：{rating}，信息完整指数 {confidence}/100。"
-                f"最终买卖观察口径为：{action_label}。"
+                f"一句话结论：{snapshot.name} 当前研究结论为 {rating}，"
+                f"投委会动作口径为 {action_label}，信息完整指数 {confidence}/100。"
+                f"核心理由：{_summary_core_reason(snapshot, quant_brief)}"
+                f"主要风险：{_summary_primary_risk(quant_brief)}"
+                "下一步重点：继续跟踪成交活跃度、关键价格区间、公告与财务验证、风险读数变化。"
             ),
         ),
         ReportSection(
@@ -50,8 +51,8 @@ def render_report(
             title="最终买卖观察结论",
             status="ready",
             content=(
-                f"投委会研究动作口径：{action_label}。该口径仅表示研究跟踪优先级，"
-                "不构成任何买卖指令、财务建议、投资建议或交易建议。"
+                f"用户可读口径：{_action_plain_explanation(action_label)}"
+                "该口径代表当前研究跟踪动作，不构成任何买卖指令、财务建议、投资建议或交易建议。"
             ),
         ),
         ReportSection(
@@ -196,24 +197,95 @@ def _action_from_rating(
     return "观望观察"
 
 
+def _summary_core_reason(snapshot: MarketSnapshot, quant_brief: QuantBrief | None) -> str:
+    if quant_brief is None:
+        return (
+            f"{snapshot.name} 已完成行情事实记录，但量化因子尚未形成完整底稿，"
+            "结论以谨慎观察为主。"
+        )
+    return (
+        f"量化模型给出 {quant_brief.signal_label}，趋势 {quant_brief.trend_score}/100，"
+        f"动量 {quant_brief.momentum_score}/100，量价 {quant_brief.volume_score}/100，"
+        f"风险约束 {quant_brief.risk_score}/100。"
+    )
+
+
+def _summary_primary_risk(quant_brief: QuantBrief | None) -> str:
+    if quant_brief is None:
+        return "当前主要风险在于量化因子、公告和财务事实尚未完成统一复核。"
+    if quant_brief.risk_score >= 82:
+        return "风险读数偏高，需优先观察波动、回撤和成交是否继续恶化。"
+    if quant_brief.evidence_score < 65:
+        return "信息完整指数不足，需等待公告、财务或行业证据进一步补强。"
+    return "主要风险在于量价信号能否被基本面、公告和行业事实继续验证。"
+
+
+def _action_plain_explanation(action_label: str) -> str:
+    if action_label == "买入观察":
+        return "纳入买入观察池，适合继续跟踪中期持有条件，重点等待回踩确认或放量突破。"
+    if action_label == "风险回避":
+        return "进入风险回避口径，已持有应优先降低风险暴露，未持有不急于介入。"
+    return "维持观望观察，短期不新增持有，等待方向、成交和风险读数进一步确认。"
+
+
 def _render_quant_brief(quant_brief: QuantBrief | None) -> str:
     if quant_brief is None:
         return "量化模型底稿暂未形成，报告仅保留行情事实与投委会讨论记录。"
     factor_summary = (
+        f"算法版本：{quant_brief.algorithm_version}。\n"
         f"模型观察：{quant_brief.signal_label}；趋势 {quant_brief.trend_score}/100，"
         f"动量 {quant_brief.momentum_score}/100，波动 {quant_brief.volatility_score}/100，"
         f"量价 {quant_brief.volume_score}/100，风险约束 {quant_brief.risk_score}/100，"
-        f"证据覆盖 {quant_brief.evidence_score}/100。"
+        f"信息完整指数 {quant_brief.evidence_score}/100，"
+        f"数据质量 {quant_brief.data_quality_score}/100（{quant_brief.data_quality_grade}）。"
     )
     facts = "\n".join(f"{index}. {fact}" for index, fact in enumerate(quant_brief.facts, start=1))
+    quality_checks = "\n".join(
+        f"{index}. {item.label}：{item.detail}"
+        for index, item in enumerate(quant_brief.data_quality_checks, start=1)
+    )
+    fact_chain = "\n".join(
+        f"{index}. {item.category} - {item.title}（{_fact_status_text(item.status)}）：{item.summary}"
+        for index, item in enumerate(quant_brief.fact_chain[:8], start=1)
+    )
+    cross_section = ""
+    if quant_brief.cross_section:
+        cross_section = "\n".join(
+            f"{index}. {item.label}：{item.value}{item.unit}。{item.detail}"
+            for index, item in enumerate(quant_brief.cross_section.factors, start=1)
+        )
+    validation = "\n".join(
+        f"{index}. {item.label}（{_validation_status_text(item.status)}）：{item.detail}"
+        for index, item in enumerate(quant_brief.validation_checks, start=1)
+    )
     limitations = "\n".join(
         f"{index}. {item}" for index, item in enumerate(quant_brief.limitations, start=1)
     )
     return (
         f"{factor_summary}\n\n"
         f"客观事实：\n{facts}\n\n"
+        f"事实链：\n{fact_chain or '事实链暂未返回，报告不得编造财报、公告、新闻或行业事实。'}\n\n"
+        f"横截面因子：\n{cross_section or '横截面因子暂未返回，RPS、行业相对强弱和资金拥挤度不参与强结论。'}\n\n"
+        f"数据质量校验：\n{quality_checks}\n\n"
+        f"量化安全校验：\n{validation or '安全校验暂未运行。'}\n\n"
         f"验证口径：\n{limitations}"
     )
+
+
+def _fact_status_text(status: str) -> str:
+    if status == "confirmed":
+        return "已确认"
+    if status == "partial":
+        return "待复核"
+    return "待补证"
+
+
+def _validation_status_text(status: str) -> str:
+    if status == "pass":
+        return "通过"
+    if status == "warn":
+        return "警告"
+    return "失败"
 
 
 def _join_points(title: str, points: list[str]) -> str:
@@ -241,7 +313,8 @@ def _render_risk_boundary(
         )
         return (
             f"风险等级：{risk_level}，风险约束 {quant_brief.risk_score}/100，"
-            f"波动因子 {quant_brief.volatility_score}/100，信息完整指数 {quant_brief.evidence_score}/100。\n"
+            f"波动因子 {quant_brief.volatility_score}/100，信息完整指数 {quant_brief.evidence_score}/100，"
+            f"数据质量 {quant_brief.data_quality_score}/100。\n"
             f"主要边界：{snapshot.name} 当前研究评级为 {rating}，需要同时观察价格波动、成交活跃度、"
             "回撤区间和公告事实是否同向验证。\n"
             "触发条件：若波动继续扩张、成交活跃度回落或价格跌破关键通道，研究口径应下调；"
@@ -305,8 +378,8 @@ def _render_key_judgement(
     snapshot: MarketSnapshot,
 ) -> str:
     quant_line = (
-        f"量化模型给出 {quant_brief.signal_label}，证据覆盖 {quant_brief.evidence_score}/100，"
-        f"风险约束 {quant_brief.risk_score}/100。"
+        f"量化模型给出 {quant_brief.signal_label}，信息完整指数 {quant_brief.evidence_score}/100，"
+        f"数据质量 {quant_brief.data_quality_score}/100，风险约束 {quant_brief.risk_score}/100。"
         if quant_brief
         else "量化底稿暂未形成，当前仅保留行情事实与会议讨论输入。"
     )
@@ -333,17 +406,20 @@ def _render_research_recommendation(
 ) -> str:
     if action_label == "买入观察":
         action_text = (
-            "研究建议：买入观察，中期持有型跟踪。已持有可继续持有；未持有等待回踩确认或放量突破后纳入观察。"
+            "明确口径：买入观察。研究建议为中期持有型跟踪；已持有可继续持有，"
+            "未持有等待回踩确认或放量突破后纳入观察。"
         )
         trigger = "趋势保持强势、成交活跃度不萎缩、公告和财务信息没有出现负面修正。"
     elif action_label == "风险回避":
         action_text = (
-            "研究建议：暂不持有，偏卖出观察。已持有优先降低暴露；未持有不介入，等待风险明显回落后再看。"
+            "明确口径：风险回避。研究建议为暂不持有、偏卖出观察；已持有优先降低暴露，"
+            "未持有不介入，等待风险明显回落后再看。"
         )
         trigger = "风险读数下降、趋势重新站稳、成交恢复并完成公告与财务信息复核。"
     else:
         action_text = (
-            "研究建议：短期观望，不新增持有。已持有以轻仓跟踪为主；未持有等待方向确认，不急于介入。"
+            "明确口径：观望观察。研究建议为短期观望、不新增持有；已持有以轻仓跟踪为主，"
+            "未持有等待方向确认，不急于介入。"
         )
         trigger = "若趋势突破并站稳、成交同步放大、风险读数下降，可上调为买入观察；若跌破关键支撑或风险继续升温，转为风险回避。"
 
@@ -399,7 +475,7 @@ def _risk_summary(quant_brief: QuantBrief | None, risk_points: list[str]) -> str
     risk_state = "偏高" if quant_brief.risk_score >= 82 else "可控"
     suffix = "风控已要求报告写明失效条件和跟踪触发线。" if risk_points else "仍需保留失效条件和跟踪触发线。"
     return (
-        f"风控判断为风险约束{risk_state}，证据覆盖 {quant_brief.evidence_score}/100。"
+        f"风控判断为风险约束{risk_state}，信息完整指数 {quant_brief.evidence_score}/100。"
         f"{suffix}"
     )
 

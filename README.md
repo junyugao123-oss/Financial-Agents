@@ -25,7 +25,7 @@
 - Deploy: Docker Compose。
 - CI/CD: GitHub Actions 起步，结构上兼容后续 Harness CI/CD。
 
-详见 [Architecture](docs/ARCHITECTURE.md) 和 [CI/CD Harness](docs/HARNESS.md)。
+详见 [Architecture](docs/ARCHITECTURE.md)、[Engineering Foundation](docs/ENGINEERING_FOUNDATION.md)、[Quality Strategy](docs/QUALITY_STRATEGY.md)、[Mobile Testing](docs/MOBILE_TESTING.md)、[Algorithm Card](docs/ALGO_CARD.md)、[Data Sources](docs/DATA_SOURCES.md)、[Test Matrix](docs/TEST_MATRIX.md)、[Long-Term Memory](docs/LONG_TERM_MEMORY.md) 和 [CI/CD Harness](docs/HARNESS.md)。
 
 ## 本地启动
 
@@ -39,9 +39,33 @@ npm run dev
 
 后端默认运行在 `http://localhost:8000`，前端开发默认运行在 `http://localhost:3000`。如果验收环境使用其他端口，例如 `3001`，请以根路径 `/` 作为启动入口，或在 smoke 检查时设置 `WEB_URL=http://localhost:3001`。
 
+如果本机 `8000` 端口已被其他项目占用，请同时指定后端端口和前端代理目标，例如：`API_PORT=8001 API_PROXY_TARGET=http://localhost:8001 npm run dev`。
+
 如果没有配置模型 key，系统会使用本地专业流程脚本，仍然可以体验完整的投委会流程。
 
 如果本机默认 `python3` 不是 3.12，请用 `PYTHON=/path/to/python3.12 npm run dev` 指定后端运行时。
+
+## 工程质量门禁
+
+提交前运行：
+
+```bash
+npm run verify
+```
+
+面向真实行情演示前运行：
+
+```bash
+npm run data:validate
+```
+
+移动端验收前运行：
+
+```bash
+npm run test:mobile
+```
+
+项目长期记忆见 [Project Memory](docs/PROJECT_MEMORY.md)。未来新线程或新同事接手时，先读项目记忆，再改代码。
 
 ## 实时辩论生成
 

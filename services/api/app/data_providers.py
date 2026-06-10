@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from math import isnan
@@ -12,8 +13,11 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 
+from .cross_section import build_cross_section_context
 from .db import Repository
-from .models import MarketSnapshot, StockSearchResult
+from .fact_chain import build_fact_chain
+from .models import CrossSectionContext, EvidenceFact, MarketSnapshot, StockSearchResult
+from .scraping import PublicEvidenceCrawler, ScrapedEvidenceBundle
 
 
 DISPLAY_NAMES = {
@@ -48,6 +52,35 @@ SEARCH_ALIASES = {
     ("港股", "02631"): ["天岳", "天岳先进", "sicc", "sicc co"],
 }
 
+CROSS_SECTION_PEER_LIMIT = 24
+CROSS_SECTION_WORKERS = 6
+
+
+def _merge_public_frames(
+    primary: pd.DataFrame | None,
+    supplemental: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    frames = [
+        frame
+        for frame in (primary, supplemental)
+        if isinstance(frame, pd.DataFrame) and not frame.empty
+    ]
+    if not frames:
+        return primary if isinstance(primary, pd.DataFrame) else supplemental
+    merged = pd.concat(frames, ignore_index=True, sort=False)
+    comparable_columns = [column for column in ("公告标题", "新闻标题", "标题", "url") if column in merged]
+    if comparable_columns:
+        merged = merged.drop_duplicates(subset=comparable_columns, keep="first")
+    else:
+        merged = merged.drop_duplicates(keep="first")
+    return merged.reset_index(drop=True)
+
+
+def _join_source_note(primary: str | None, supplemental: str) -> str:
+    if primary and supplemental and supplemental not in primary:
+        return f"{primary}；{supplemental}"
+    return primary or supplemental
+
 
 def normalize_symbol(market: str, symbol: str) -> str:
     value = re.sub(r"\s+", "", symbol.strip().upper())
@@ -77,6 +110,9 @@ class FreeMarketDataProvider:
     def __init__(self) -> None:
         self._stock_universe_cache: dict[str, tuple[datetime, list[StockSearchResult]]] = {}
         self._stock_universe_ttl = timedelta(hours=6)
+        self._crawler = PublicEvidenceCrawler()
+        self._crawler_cache: dict[tuple[str, str, str], tuple[datetime, ScrapedEvidenceBundle]] = {}
+        self._crawler_ttl = timedelta(minutes=20)
 
     async def search_symbols(
         self,
@@ -179,6 +215,44 @@ class FreeMarketDataProvider:
     ) -> pd.DataFrame:
         cached_symbol = normalize_symbol(market, symbol)
         return await asyncio.to_thread(self._fetch_price_history, market, cached_symbol, days)
+
+    async def get_fact_chain(
+        self,
+        market: str,
+        symbol: str,
+        *,
+        name: str,
+        snapshot: MarketSnapshot | None = None,
+    ) -> list[EvidenceFact]:
+        cached_symbol = normalize_symbol(market, symbol)
+        return await asyncio.to_thread(self._fetch_fact_chain, market, cached_symbol, name, snapshot)
+
+    async def get_factor_evidence(
+        self,
+        market: str,
+        symbol: str,
+        *,
+        name: str,
+    ) -> dict[str, Any]:
+        cached_symbol = normalize_symbol(market, symbol)
+        return await asyncio.to_thread(self._fetch_factor_evidence, market, cached_symbol, name)
+
+    async def get_cross_section_context(
+        self,
+        market: str,
+        symbol: str,
+        *,
+        history: pd.DataFrame,
+        name: str,
+    ) -> CrossSectionContext:
+        cached_symbol = normalize_symbol(market, symbol)
+        return await asyncio.to_thread(
+            self._fetch_cross_section_context,
+            market,
+            cached_symbol,
+            history,
+            name,
+        )
 
     async def get_kline_history(
         self,
@@ -541,9 +615,9 @@ class FreeMarketDataProvider:
                 period="daily",
                 start_date=start_date,
                 end_date=end_date,
-                adjust="qfq",
+                adjust="",
             )
-            source = "AKShare stock_zh_a_hist"
+            source = "AKShare stock_zh_a_hist raw daily close"
             name = self._resolve_symbol_name(market, symbol)
         else:
             frame = ak.stock_hk_hist(
@@ -668,14 +742,32 @@ class FreeMarketDataProvider:
 
         try:
             if market == "A股":
-                frame = ak.stock_zh_a_hist(
+                raw_frame = ak.stock_zh_a_hist(
                     symbol=symbol,
                     period="daily",
                     start_date=start_date,
                     end_date=end_date,
-                    adjust="qfq",
+                    adjust="",
                 )
-                source = "AKShare stock_zh_a_hist"
+                qfq_frame = pd.DataFrame()
+                try:
+                    qfq_frame = ak.stock_zh_a_hist(
+                        symbol=symbol,
+                        period="daily",
+                        start_date=start_date,
+                        end_date=end_date,
+                        adjust="qfq",
+                    )
+                except Exception:
+                    qfq_frame = pd.DataFrame()
+                frame = qfq_frame if not qfq_frame.empty else raw_frame
+                source = (
+                    "AKShare stock_zh_a_hist qfq indicators"
+                    if not qfq_frame.empty
+                    else "AKShare stock_zh_a_hist raw indicators"
+                )
+                raw_history = _normalize_history_frame(raw_frame) if not raw_frame.empty else None
+                adjustment = "qfq" if not qfq_frame.empty else "raw"
             else:
                 frame = ak.stock_hk_hist(
                     symbol=symbol,
@@ -684,7 +776,9 @@ class FreeMarketDataProvider:
                     end_date=end_date,
                     adjust="",
                 )
-                source = "AKShare stock_hk_hist"
+                source = "AKShare stock_hk_hist raw indicators"
+                raw_history = None
+                adjustment = "raw"
         except Exception as exc:
             return self._fetch_yfinance_history(market, symbol, days, primary_error=exc)
 
@@ -697,8 +791,427 @@ class FreeMarketDataProvider:
             )
 
         history = _normalize_history_frame(frame)
-        history.attrs["source"] = source
-        return history
+        return _attach_history_reference(
+            history,
+            source=source,
+            raw_history=raw_history,
+            raw_source="AKShare stock_zh_a_hist raw close" if market == "A股" else source,
+            adjustment=adjustment,
+        )
+
+    def _fetch_fact_chain(
+        self,
+        market: str,
+        symbol: str,
+        name: str,
+        snapshot: MarketSnapshot | None,
+    ) -> list[EvidenceFact]:
+        source_notes: dict[str, str] = {}
+        financial_rows = self._safe_public_frame(
+            source_notes,
+            "financial",
+            lambda: self._fetch_financial_rows(market, symbol),
+        )
+        announcement_rows = self._safe_public_frame(
+            source_notes,
+            "announcement",
+            lambda: self._fetch_announcement_rows(market, symbol),
+        )
+        news_rows = self._safe_public_frame(
+            source_notes,
+            "news",
+            lambda: self._fetch_news_rows(market, symbol, name),
+        )
+        crawler_bundle = self._fetch_crawler_evidence(market, symbol, name)
+        financial_rows = _merge_public_frames(crawler_bundle.financial_rows, financial_rows)
+        if not crawler_bundle.financial_rows.empty:
+            source_notes["financial"] = _join_source_note(source_notes.get("financial"), crawler_bundle.source_note)
+        announcement_rows = _merge_public_frames(announcement_rows, crawler_bundle.announcement_rows)
+        news_rows = _merge_public_frames(news_rows, crawler_bundle.news_rows)
+        source_notes["crawler"] = crawler_bundle.source_note
+        industry_rows = self._safe_public_frame(
+            source_notes,
+            "industry",
+            lambda: self._fetch_industry_rows(market, symbol),
+        )
+        return build_fact_chain(
+            market=market,
+            symbol=symbol,
+            name=name,
+            snapshot=snapshot,
+            financial_rows=financial_rows,
+            announcement_rows=announcement_rows,
+            news_rows=news_rows,
+            industry_rows=industry_rows,
+            source_notes=source_notes,
+        )
+
+    def _fetch_factor_evidence(self, market: str, symbol: str, name: str) -> dict[str, Any]:
+        source_notes: dict[str, str] = {}
+        financial_rows = self._safe_public_frame(
+            source_notes,
+            "financial",
+            lambda: self._fetch_financial_rows(market, symbol),
+        )
+        announcement_rows = self._safe_public_frame(
+            source_notes,
+            "announcement",
+            lambda: self._fetch_announcement_rows(market, symbol),
+        )
+        news_rows = self._safe_public_frame(
+            source_notes,
+            "news",
+            lambda: self._fetch_news_rows(market, symbol, name),
+        )
+        crawler_bundle = self._fetch_crawler_evidence(market, symbol, name)
+        financial_rows = _merge_public_frames(crawler_bundle.financial_rows, financial_rows)
+        if not crawler_bundle.financial_rows.empty:
+            source_notes["financial"] = _join_source_note(source_notes.get("financial"), crawler_bundle.source_note)
+        announcement_rows = _merge_public_frames(announcement_rows, crawler_bundle.announcement_rows)
+        news_rows = _merge_public_frames(news_rows, crawler_bundle.news_rows)
+        source_notes["crawler"] = crawler_bundle.source_note
+        valuation_rows, valuation_source = self._fetch_valuation_rows(market, symbol)
+        source_notes["valuation"] = valuation_source
+        profit_forecast_rows, forecast_source = self._fetch_profit_forecast_rows(market, symbol)
+        source_notes["profit_forecast"] = forecast_source
+        return {
+            "financial_rows": financial_rows,
+            "announcement_rows": announcement_rows,
+            "news_rows": news_rows,
+            "valuation_rows": valuation_rows,
+            "profit_forecast_rows": profit_forecast_rows,
+            "source_notes": source_notes,
+        }
+
+    def _fetch_crawler_evidence(
+        self,
+        market: str,
+        symbol: str,
+        name: str,
+    ) -> ScrapedEvidenceBundle:
+        key = (market, symbol, name)
+        cached = self._crawler_cache.get(key)
+        if cached and datetime.now() - cached[0] < self._crawler_ttl:
+            return cached[1]
+        try:
+            bundle = self._crawler.crawl(market=market, symbol=symbol, name=name)
+        except Exception as exc:
+            bundle = ScrapedEvidenceBundle(
+                financial_rows=pd.DataFrame(),
+                announcement_rows=pd.DataFrame(),
+                news_rows=pd.DataFrame(),
+                source_note=f"PublicEvidenceCrawler 暂不可用：{type(exc).__name__}",
+            )
+        self._crawler_cache[key] = (datetime.now(), bundle)
+        return bundle
+
+    def _fetch_cross_section_context(
+        self,
+        market: str,
+        symbol: str,
+        history: pd.DataFrame,
+        name: str,
+    ) -> CrossSectionContext:
+        spot_frame = self._safe_spot_frame(market)
+        peer_histories = self._fetch_cross_section_peer_histories(market, symbol, spot_frame)
+        return build_cross_section_context(
+            market=market,
+            symbol=symbol,
+            name=name,
+            target_history=history,
+            peer_histories=peer_histories,
+            spot_frame=spot_frame,
+        )
+
+    def _fetch_cross_section_peer_histories(
+        self,
+        market: str,
+        symbol: str,
+        spot_frame: pd.DataFrame | None,
+    ) -> dict[str, pd.DataFrame]:
+        peer_symbols = _select_cross_section_peer_symbols(
+            market,
+            symbol,
+            spot_frame,
+            limit=CROSS_SECTION_PEER_LIMIT,
+        )
+        if not peer_symbols:
+            return {}
+
+        histories: dict[str, pd.DataFrame] = {}
+        workers = min(CROSS_SECTION_WORKERS, len(peer_symbols))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self._fetch_price_history, market, peer_symbol, 140): peer_symbol
+                for peer_symbol in peer_symbols
+            }
+            for future in as_completed(futures):
+                peer_symbol = futures[future]
+                try:
+                    frame = future.result()
+                except Exception:
+                    continue
+                if len(frame) >= 65:
+                    histories[peer_symbol] = frame
+        return histories
+
+    def _safe_public_frame(
+        self,
+        source_notes: dict[str, str],
+        key: str,
+        fetcher: Any,
+    ) -> pd.DataFrame | None:
+        try:
+            frame, source = fetcher()
+            source_notes[key] = source
+            return frame
+        except Exception as exc:
+            source_notes[key] = f"公开{key}接口暂不可用：{type(exc).__name__}"
+            return None
+
+    def _safe_spot_frame(self, market: str) -> pd.DataFrame | None:
+        try:
+            return self._fetch_eastmoney_spot_frame(market)
+        except Exception:
+            pass
+        try:
+            import akshare as ak
+
+            if market == "A股":
+                frame = ak.stock_zh_a_spot_em()
+                source = "AKShare stock_zh_a_spot_em"
+            else:
+                frame = ak.stock_hk_spot_em()
+                source = "AKShare stock_hk_spot_em"
+            frame.attrs["source"] = source
+            frame.attrs["data_as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            return frame
+        except Exception:
+            return None
+
+    def _fetch_eastmoney_spot_frame(self, market: str) -> pd.DataFrame:
+        page_size = 100
+        first_payload = self._read_eastmoney_spot_page(market, page=1, page_size=page_size)
+        data = first_payload.get("data") if isinstance(first_payload, dict) else None
+        if not isinstance(data, dict):
+            raise ValueError("empty Eastmoney spot payload")
+        first_rows = data.get("diff") or []
+        total = int(data.get("total") or len(first_rows))
+        if not first_rows:
+            raise ValueError("empty Eastmoney spot rows")
+
+        pages = max(1, min(80, (total + page_size - 1) // page_size))
+        rows = list(first_rows)
+        if pages > 1:
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {
+                    executor.submit(self._read_eastmoney_spot_page, market, page, page_size): page
+                    for page in range(2, pages + 1)
+                }
+                for future in as_completed(futures):
+                    payload = future.result()
+                    payload_data = payload.get("data") if isinstance(payload, dict) else None
+                    if isinstance(payload_data, dict):
+                        rows.extend(payload_data.get("diff") or [])
+
+        frame = pd.DataFrame(
+            {
+                "代码": [str(row.get("f12") or "").strip() for row in rows],
+                "名称": [str(row.get("f14") or "").strip() for row in rows],
+                "最新价": [_eastmoney_raw_number(row.get("f2")) for row in rows],
+                "涨跌幅": [_eastmoney_raw_number(row.get("f3")) for row in rows],
+                "成交量": [_eastmoney_raw_number(row.get("f5")) for row in rows],
+                "成交额": [_eastmoney_raw_number(row.get("f6")) for row in rows],
+                "换手率": [_eastmoney_raw_number(row.get("f8")) for row in rows],
+                "量比": [_eastmoney_raw_number(row.get("f10")) for row in rows],
+                "今开": [_eastmoney_raw_number(row.get("f17")) for row in rows],
+                "昨收": [_eastmoney_raw_number(row.get("f18")) for row in rows],
+                "总市值": [_eastmoney_raw_number(row.get("f20")) for row in rows],
+                "流通市值": [_eastmoney_raw_number(row.get("f21")) for row in rows],
+                "市净率": [_eastmoney_raw_number(row.get("f23")) for row in rows],
+                "阶段涨跌幅": [_eastmoney_raw_number(row.get("f24")) for row in rows],
+                "长期涨跌幅": [_eastmoney_raw_number(row.get("f25")) for row in rows],
+                "主力净流入": [_eastmoney_raw_number(row.get("f62")) for row in rows],
+            }
+        )
+        frame = frame[frame["代码"].astype(str).str.len() > 0].drop_duplicates(subset=["代码"])
+        if frame.empty:
+            raise ValueError("Eastmoney spot frame has no symbols")
+        frame.attrs["source"] = f"Eastmoney clist {market}"
+        frame.attrs["data_as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return frame
+
+    def _read_eastmoney_spot_page(self, market: str, page: int, page_size: int) -> dict[str, Any]:
+        params = urlencode(
+            {
+                "pn": str(page),
+                "pz": str(page_size),
+                "po": "1",
+                "np": "1",
+                "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+                "fltt": "2",
+                "invt": "2",
+                "fid": "f12",
+                "fs": _eastmoney_spot_fs(market),
+                "fields": "f2,f3,f5,f6,f8,f10,f12,f14,f17,f18,f20,f21,f23,f24,f25,f62",
+                "_": str(int(datetime.now().timestamp() * 1000)),
+            }
+        )
+        last_error: Exception | None = None
+        for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+            request = Request(
+                f"https://{host}/api/qt/clist/get?{params}",
+                headers={
+                    "Accept": "application/json,text/plain,*/*",
+                    "Referer": "https://quote.eastmoney.com/",
+                    "User-Agent": "Mozilla/5.0 JunyuResearch/0.1",
+                },
+            )
+            try:
+                with urlopen(request, timeout=8) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except Exception as exc:
+                last_error = exc
+        raise ValueError(
+            "Eastmoney spot page request failed"
+            if last_error is None
+            else f"Eastmoney spot page request failed: {type(last_error).__name__}"
+        )
+
+    def _fetch_financial_rows(self, market: str, symbol: str) -> tuple[pd.DataFrame, str]:
+        import akshare as ak
+
+        if market == "A股":
+            for method_name in (
+                "stock_financial_abstract_ths",
+                "stock_financial_analysis_indicator_em",
+                "stock_financial_analysis_indicator",
+            ):
+                method = getattr(ak, method_name, None)
+                if method is None:
+                    continue
+                try:
+                    frame = method(symbol=symbol)
+                except Exception:
+                    continue
+                if isinstance(frame, pd.DataFrame) and not frame.empty:
+                    return frame, f"AKShare {method_name}"
+            return pd.DataFrame(), "A股财务公开接口暂未返回可解析数据"
+
+        for method_name in (
+            "stock_financial_hk_analysis_indicator_em",
+            "stock_hk_financial_indicator_em",
+        ):
+            method = getattr(ak, method_name, None)
+            if method is None:
+                continue
+            try:
+                frame = method(symbol=symbol)
+            except TypeError:
+                frame = method(symbol=format_display_symbol(market, symbol))
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                return frame, f"AKShare {method_name}"
+        return pd.DataFrame(), "港股财务公开接口待接入"
+
+    def _fetch_announcement_rows(self, market: str, symbol: str) -> tuple[pd.DataFrame, str]:
+        import akshare as ak
+
+        method = getattr(ak, "stock_individual_notice_report", None)
+        if method is None:
+            return pd.DataFrame(), "AKShare 公告接口待接入"
+        begin_date = (datetime.now() - timedelta(days=240)).strftime("%Y%m%d")
+        end_date = datetime.now().strftime("%Y%m%d")
+        securities = [symbol, format_display_symbol(market, symbol)]
+        if market == "A股":
+            securities = [symbol]
+        for security in dict.fromkeys(securities):
+            try:
+                frame = method(security=security, symbol="全部", begin_date=begin_date, end_date=end_date)
+                if isinstance(frame, pd.DataFrame) and not frame.empty:
+                    return frame, "AKShare stock_individual_notice_report"
+            except TypeError:
+                try:
+                    frame = method(symbol=security)
+                    if isinstance(frame, pd.DataFrame) and not frame.empty:
+                        return frame, "AKShare stock_individual_notice_report"
+                except Exception:
+                    continue
+            except Exception:
+                continue
+        return pd.DataFrame(), "个股公告公开接口待接入"
+
+    def _fetch_news_rows(self, market: str, symbol: str, name: str) -> tuple[pd.DataFrame, str]:
+        import akshare as ak
+
+        method = getattr(ak, "stock_news_em", None)
+        if method is None:
+            return pd.DataFrame(), "AKShare 新闻接口待接入"
+        queries = [symbol, format_display_symbol(market, symbol), name]
+        for query in dict.fromkeys(item for item in queries if item):
+            try:
+                frame = method(symbol=query)
+                if not frame.empty:
+                    return frame, "AKShare stock_news_em"
+            except Exception:
+                continue
+        return pd.DataFrame(), "个股新闻公开接口待接入"
+
+    def _fetch_industry_rows(self, market: str, symbol: str) -> tuple[pd.DataFrame, str]:
+        import akshare as ak
+
+        if market == "A股":
+            method = getattr(ak, "stock_individual_info_em", None)
+            if method is not None:
+                frame = method(symbol=symbol)
+                return _normalize_key_value_frame(frame), "AKShare stock_individual_info_em"
+        return pd.DataFrame(), f"{market}行业公开接口待接入"
+
+    def _fetch_valuation_rows(self, market: str, symbol: str) -> tuple[dict[str, pd.DataFrame], str]:
+        import akshare as ak
+
+        method_name = "stock_zh_valuation_baidu" if market == "A股" else "stock_hk_valuation_baidu"
+        method = getattr(ak, method_name, None)
+        if method is None:
+            return {}, f"AKShare {method_name} 待接入"
+        rows: dict[str, pd.DataFrame] = {}
+        source_parts: list[str] = []
+        for key, indicator in (("pb", "市净率"), ("pe", "市盈率"), ("market_cap", "总市值")):
+            try:
+                frame = method(symbol=symbol, indicator=indicator)
+            except Exception:
+                continue
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                rows[key] = frame
+                source_parts.append(indicator)
+        if rows:
+            return rows, f"AKShare {method_name}({','.join(source_parts)})"
+        return {}, f"{market}估值公开接口暂未返回可解析数据"
+
+    def _fetch_profit_forecast_rows(self, market: str, symbol: str) -> tuple[pd.DataFrame, str]:
+        import akshare as ak
+
+        if market == "A股":
+            method = getattr(ak, "stock_profit_forecast_ths", None)
+            if method is not None:
+                for indicator in ("预测年报净利润", "预测年报每股收益"):
+                    try:
+                        frame = method(symbol=symbol, indicator=indicator)
+                    except Exception:
+                        continue
+                    if isinstance(frame, pd.DataFrame) and not frame.empty:
+                        frame = frame.copy()
+                        frame["_forecast_indicator"] = indicator
+                        return frame, f"AKShare stock_profit_forecast_ths {indicator}"
+        else:
+            method = getattr(ak, "stock_hk_profit_forecast_et", None)
+            if method is not None:
+                try:
+                    frame = method(symbol=symbol)
+                except Exception:
+                    frame = pd.DataFrame()
+                if isinstance(frame, pd.DataFrame) and not frame.empty:
+                    return frame, "AKShare stock_hk_profit_forecast_et"
+        return pd.DataFrame(), f"{market}业绩预测公开接口暂未返回可解析数据"
 
     def _fetch_yfinance_history(
         self,
@@ -728,8 +1241,13 @@ class FreeMarketDataProvider:
             frame.columns = frame.columns.get_level_values(0)
         frame = frame.reset_index()
         history = _normalize_history_frame(frame)
-        history.attrs["source"] = f"yfinance {ticker}"
-        return history
+        return _attach_history_reference(
+            history,
+            source=f"yfinance {ticker} raw indicators",
+            raw_history=history,
+            raw_source=f"yfinance {ticker} raw close",
+            adjustment="raw",
+        )
 
     def _fetch_kline_history(
         self,
@@ -1177,6 +1695,121 @@ def _normalize_history_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return normalized[required].copy()
 
 
+def _attach_history_reference(
+    history: pd.DataFrame,
+    *,
+    source: str,
+    raw_history: pd.DataFrame | None,
+    raw_source: str,
+    adjustment: str,
+) -> pd.DataFrame:
+    """Attach price-reference metadata without changing indicator input rows.
+
+    A-share indicators are usually calculated on adjusted daily bars, while
+    realtime quotes are unadjusted exchange prices. Keeping both references
+    prevents false snapshot mismatches and makes the data lineage auditable.
+    """
+
+    history.attrs["source"] = source
+    history.attrs["adjustment"] = adjustment
+    reference = raw_history if raw_history is not None and not raw_history.empty else history
+    raw_last_close = _last_valid_close(reference)
+    if raw_last_close is not None:
+        history.attrs["raw_last_close"] = raw_last_close
+        history.attrs["raw_source"] = raw_source
+    return history
+
+
+def _last_valid_close(history: pd.DataFrame | None) -> float | None:
+    if history is None or history.empty or "close" not in history.columns:
+        return None
+    closes = pd.to_numeric(history["close"], errors="coerce").dropna()
+    if closes.empty:
+        return None
+    value = _safe_float(closes.iloc[-1])
+    return value if value is not None and value > 0 else None
+
+
+def _select_cross_section_peer_symbols(
+    market: str,
+    symbol: str,
+    spot_frame: pd.DataFrame | None,
+    *,
+    limit: int,
+) -> list[str]:
+    if spot_frame is None or spot_frame.empty:
+        return []
+    code_column = _first_existing_column(spot_frame, ("代码", "symbol", "code"))
+    if code_column is None:
+        return []
+    amount_column = _first_existing_column(spot_frame, ("成交额", "amount", "turnover"))
+    pct_column = _first_existing_column(spot_frame, ("涨跌幅", "pct", "change"))
+
+    frame = spot_frame.copy()
+    width = 5 if market == "港股" else 6
+    target_code = re.sub(r"\D", "", symbol).zfill(width)
+    frame["_code"] = (
+        frame[code_column].astype(str).str.replace(r"\D", "", regex=True).str.zfill(width)
+    )
+    frame = frame[frame["_code"].str.fullmatch(r"\d{" + str(width) + r"}")]
+    frame = frame[frame["_code"] != target_code]
+    if frame.empty:
+        return []
+
+    if amount_column is not None:
+        frame["_amount"] = pd.to_numeric(frame[amount_column], errors="coerce").fillna(0.0)
+    else:
+        frame["_amount"] = 0.0
+    if pct_column is not None:
+        frame["_abs_pct"] = pd.to_numeric(frame[pct_column], errors="coerce").abs().fillna(0.0)
+    else:
+        frame["_abs_pct"] = 0.0
+
+    frame = frame.sort_values(["_amount", "_abs_pct"], ascending=[False, False])
+    peers: list[str] = []
+    seen: set[str] = set()
+    for code in frame["_code"].tolist():
+        try:
+            normalized = normalize_symbol(market, str(code))
+        except ValueError:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        peers.append(normalized)
+        if len(peers) >= limit:
+            break
+    return peers
+
+
+def _first_existing_column(frame: pd.DataFrame, candidates: tuple[str, ...]) -> str | None:
+    lower_map = {str(column).lower(): str(column) for column in frame.columns}
+    for candidate in candidates:
+        if candidate in frame.columns:
+            return candidate
+        match = lower_map.get(candidate.lower())
+        if match is not None:
+            return match
+    return None
+
+
+def _normalize_key_value_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    columns = {str(column).lower(): column for column in frame.columns}
+    item_column = columns.get("item") or columns.get("项目") or columns.get("指标")
+    value_column = columns.get("value") or columns.get("值") or columns.get("数据")
+    if item_column is None or value_column is None:
+        return frame
+    values: dict[str, Any] = {}
+    for _, row in frame.iterrows():
+        key = str(row.get(item_column) or "").strip()
+        if not key:
+            continue
+        values[key] = row.get(value_column)
+    return pd.DataFrame([values]) if values else frame
+
+
 def _akshare_minute_period(interval: str) -> str:
     mapping = {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "60m": "60"}
     return mapping.get(interval, "1")
@@ -1185,6 +1818,22 @@ def _akshare_minute_period(interval: str) -> str:
 def _yfinance_interval(interval: str) -> str:
     mapping = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "60m": "60m"}
     return mapping.get(interval, "1m")
+
+
+def _eastmoney_spot_fs(market: str) -> str:
+    if market == "A股":
+        return "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048"
+    if market == "港股":
+        return "m:128 t:3,m:128 t:4,m:128 t:1,m:128 t:2"
+    raise ValueError("Unsupported market")
+
+
+def _eastmoney_raw_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if isnan(number) else number
 
 
 def _eastmoney_secid(market: str, symbol: str) -> str:

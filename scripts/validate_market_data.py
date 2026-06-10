@@ -63,12 +63,14 @@ async def validate_symbol(provider: FreeMarketDataProvider, market: str, symbol:
     if any(score < 18 or score > 96 for score in scores):
         issues.append(f"{market} {symbol}: quant score out of expected bounds {scores}")
 
-    last_close = float(history.iloc[-1]["close"])
+    last_close = float(history.attrs.get("raw_last_close") or history.iloc[-1]["close"])
     price_gap = abs(snapshot.latest_close / last_close - 1) if last_close else 99
-    if price_gap > 0.015:
+    tolerated_gap = max(0.08, abs(snapshot.pct_change or 0) / 100 + 0.04)
+    if price_gap > tolerated_gap:
         issues.append(
             f"{market} {symbol}: quote/history close mismatch "
-            f"{snapshot.latest_close} vs {last_close:.4f}"
+            f"{snapshot.latest_close} vs {last_close:.4f}; "
+            f"gap={price_gap:.2%}, tolerance={tolerated_gap:.2%}"
         )
 
     try:

@@ -13,7 +13,8 @@ dependencies = [
     "akshare>=1.18.0",
     "yfinance>=0.2.60",
     "pandas>=2.3.0",
-    "pandas-ta-classic>=0.6.20"
+    "pandas-ta-classic>=0.6.20",
+    "scrapling>=0.2.97"
 ]
 
 [project.optional-dependencies]

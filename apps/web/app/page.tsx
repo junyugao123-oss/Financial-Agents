@@ -1,5 +1,5 @@
 import Script from "next/script";
-import { HomeExperience } from "@/components/home-experience";
+import { HomeRouter } from "@/components/home-router";
 
 export default function Home() {
   return (
@@ -18,7 +18,7 @@ export default function Home() {
           })();
         `}
       </Script>
-      <HomeExperience />
+      <HomeRouter />
     </>
   );
 }

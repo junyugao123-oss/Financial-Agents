@@ -115,8 +115,8 @@ def test_quote_endpoint_returns_realtime_snapshot():
                 market="港股",
                 symbol="06651",
                 name="五一视界",
-                latest_close=1.23,
-                pct_change=2.5,
+                latest_close=132.0,
+                pct_change=7.4,
                 volume=10000,
                 source="test realtime",
                 quote_type="realtime",
@@ -132,7 +132,7 @@ def test_quote_endpoint_returns_realtime_snapshot():
     data = response.json()
     assert data["name"] == "五一视界"
     assert data["quote_type"] == "realtime"
-    assert data["latest_close"] == 1.23
+    assert data["latest_close"] == 132.0
 
 
 def test_snapshot_prefers_freshest_tencent_quote_over_stale_sources():
@@ -367,7 +367,7 @@ def test_quant_brief_endpoint_returns_real_indicator_structure():
 
         async def get_price_history(self, market: str, symbol: str, *, days: int = 420):
             rows = []
-            start = datetime(2026, 1, 1)
+            start = datetime.now() - pd.Timedelta(days=89)
             for index in range(90):
                 close = 10 + index * 0.05
                 rows.append(
@@ -393,6 +393,10 @@ def test_quant_brief_endpoint_returns_real_indicator_structure():
     assert data["name"] == "五一视界"
     assert data["model_name"] == "pandas-ta-classic"
     assert data["coverage_days"] == 90
+    assert data["algorithm_version"].startswith("junyu-quant-brief")
+    assert data["data_quality_score"] >= 60
+    assert data["data_quality_grade"] in {"中", "高"}
+    assert len(data["data_quality_checks"]) >= 6
     assert len(data["indicators"]) >= 6
 
 
@@ -582,11 +586,19 @@ def test_bull_bear_report_section_summarizes_without_first_person():
     ]
 
     report = render_report(session, snapshot, events, quant)
+    summary = next(section for section in report.sections if section.key == "summary")
+    action = next(section for section in report.sections if section.key == "action")
     bull_bear = next(section for section in report.sections if section.key == "bull_bear")
     risk = next(section for section in report.sections if section.key == "risk")
     judgement = next(section for section in report.sections if section.key == "judgement")
     recommendation = next(section for section in report.sections if section.key == "recommendation")
 
+    assert "一句话结论" in summary.content
+    assert "核心理由" in summary.content
+    assert "主要风险" in summary.content
+    assert "下一步重点" in summary.content
+    assert "用户可读口径" in action.content
+    assert "明确口径" in recommendation.content
     assert "多方证据摘要" in bull_bear.content
     assert "空方约束摘要" in bull_bear.content
     assert "我" not in bull_bear.content

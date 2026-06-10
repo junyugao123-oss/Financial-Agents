@@ -5,7 +5,7 @@ import json
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +32,7 @@ from .models import (
     StockSearchResult,
 )
 from .quant_engine import build_quant_brief
+from .quant_validation import run_quant_validation_suite
 from .scheduler import create_scheduler
 from .settings import get_settings
 
@@ -360,7 +361,7 @@ async def _run_session_background(session_id: str) -> None:
                     symbol=session.symbol,
                     snapshot=snapshot,
                 ),
-                timeout=4.0,
+                timeout=24.0,
             )
             _remember_quant_brief(session_id, quant_brief)
         except Exception:
@@ -417,13 +418,74 @@ async def _load_quant_brief(
 ) -> QuantBrief:
     history = await data_provider.get_price_history(market, symbol)
     name = snapshot.name if snapshot else await data_provider.resolve_symbol_name(market, symbol)
+    fact_fetcher = getattr(data_provider, "get_fact_chain", None)
+    factor_evidence_fetcher = getattr(data_provider, "get_factor_evidence", None)
+    cross_section_fetcher = getattr(data_provider, "get_cross_section_context", None)
+    fact_chain = []
+    factor_evidence = None
+    cross_section = None
+    if callable(fact_fetcher) and callable(cross_section_fetcher):
+        fact_task = asyncio.create_task(
+            fact_fetcher(
+                market,
+                symbol,
+                name=name,
+                snapshot=snapshot,
+            )
+        )
+        factor_evidence_task = (
+            asyncio.create_task(
+                factor_evidence_fetcher(
+                    market,
+                    symbol,
+                    name=name,
+                )
+            )
+            if callable(factor_evidence_fetcher)
+            else None
+        )
+        cross_section_task = asyncio.create_task(
+            cross_section_fetcher(
+                market,
+                symbol,
+                history=history,
+                name=name,
+            )
+        )
+        fact_chain, factor_evidence, cross_section = await asyncio.gather(
+            _await_or_default(fact_task, [], timeout=5.0),
+            _await_or_default(factor_evidence_task, None, timeout=10.0)
+            if factor_evidence_task is not None
+            else _immediate(None),
+            _await_or_default(cross_section_task, None, timeout=18.0),
+        )
+    validation_checks = run_quant_validation_suite(
+        history=history,
+        facts=fact_chain,
+        decision_time=datetime.now(),
+    )
     return build_quant_brief(
         market=market,
         symbol=normalize_symbol(market, symbol),
         name=name,
         history=history,
         snapshot=snapshot,
+        fact_chain=fact_chain,
+        cross_section=cross_section,
+        validation_checks=validation_checks,
+        factor_evidence=factor_evidence,
     )
+
+
+async def _immediate(value: Any) -> Any:
+    return value
+
+
+async def _await_or_default(task: asyncio.Task[Any], default: Any, *, timeout: float) -> Any:
+    try:
+        return await asyncio.wait_for(task, timeout=timeout)
+    except Exception:
+        return default
 
 
 def _sse(event: str, data: dict) -> str:

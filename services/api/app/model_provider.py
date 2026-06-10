@@ -94,6 +94,7 @@ class ModelProvider:
         snapshot_summary: str,
         quant_brief_summary: str,
         recent_context: str,
+        evidence_digest: str = "",
         target_role: str | None = None,
     ) -> str:
         if (
@@ -110,20 +111,27 @@ class ModelProvider:
                 "再给出证据链、反证、情景推演或失效条件，最后把一个尖锐问题抛回对方或风控。"
                 "至少引用两类已提供材料，例如量化底稿、行情事实、成交活跃度、"
                 "波动约束、相对强弱或回撤压力。"
+                "多头必须至少给出一条上行证据和一条验证线；空头必须至少给出一条反证和一条降权条件。"
+                "每个判断都要挂到量化底稿或事实链中的具体数字、公告、财报、新闻或风险指标上。"
+                "必须直接回应对方观点，不能只复述自己的立场。"
                 "允许直接说“我不同意”“这个推理站不住”“这条证据不够硬”，但禁止人身攻击和戏剧化。"
+                "输出必须让普通用户听懂：当前哪条证据支持、哪条证据不够、下一步验证什么。"
                 "长度控制在 180 到 260 个汉字。"
             )
             temperature = 0.56
             max_tokens = 620
         elif role in {"量化研究员", "基本面分析师", "技术分析师"}:
             role_mode = (
-                "发言要体现专业研究员的判断密度：至少包含一个指标、证据权重、"
-                "验证条件或反方可能误读的地方。长度控制在 120 到 190 个汉字。"
+                "发言要体现专业研究员的判断密度：先给岗位判断，再给至少一个指标或事实证据，"
+                "最后给验证条件、失效条件或需要其他角色回答的问题。长度控制在 130 到 210 个汉字。"
             )
             temperature = 0.42
             max_tokens = 460
         else:
-            role_mode = "长度控制在 80 到 130 个汉字。"
+            role_mode = (
+                "发言要像投委会纪要：一句岗位判断、一句证据依据、一句推进条件。"
+                "长度控制在 90 到 150 个汉字。"
+            )
             temperature = 0.35
             max_tokens = 340
 
@@ -134,6 +142,17 @@ class ModelProvider:
             "必须保持研究辅助口径。不得编造未提供的公告、财务数字、新闻或行情；"
             "如果某类材料尚未提供，也要基于现有行情、量化底稿和会议上下文"
             "给出证据权重、专业判断和下一步验证口径。"
+            "必须引用用户提供的证据摘要或量化底稿中的具体数字、事实、缺口或验证项，"
+            "不得照抄默认发言；默认发言只表示会议动作和角色意图。"
+            "证据里的数据供应商、采集来源、接口名、URL 和 source 字段只供内部校验，"
+            "用户不关心这些技术来源，发言中禁止出现 AKShare、Eastmoney、yfinance、"
+            "stock_ 开头的接口名或“来源”字样；只输出指标、事实、时间、风险和专业判断。"
+            "回答要优先回应用户最关切的问题：方向是否清晰、证据强不强、风险在哪里、"
+            "接下来应该观察什么。"
+            "每条发言必须按真实投委会逻辑落地：岗位判断、证据依据、推进条件三者至少覆盖两项；"
+            "如果出现“观察”“降权”“上调”“回避”等口径，必须同时给出触发条件或验证条件。"
+            "普通用户读完要能知道：这只标的现在怎么看、为什么这么看、下一步盯什么。"
+            "禁止空泛套话，禁止把辩论内容写成聊天寒暄，禁止用技术来源替代专业判断。"
             f"当前角色专业画像：{role_profile}"
             "必须以该角色的岗位技能、指标语言和质询方式发言；至少落到一个该角色的"
             "专业检查项、指标或风险口径。不要写成通用AI总结，也不要替其他角色做最终归纳。"
@@ -150,6 +169,7 @@ class ModelProvider:
             f"标的：{symbol}\n"
             f"事实底稿：{snapshot_summary}\n"
             f"量化底稿：{quant_brief_summary}\n"
+            f"证据摘要：{evidence_digest or '暂无额外证据摘要'}\n"
             f"最近上下文：{recent_context or '暂无'}\n"
             f"默认发言：{fallback}\n"
             "请生成该角色此刻的发言。"
@@ -193,7 +213,7 @@ class ModelProvider:
             "Content-Type": "application/json",
         }
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
+            async with httpx.AsyncClient(timeout=8.0) as client:
                 response = await client.post(
                     "https://api.deepseek.com/chat/completions",
                     json=payload,

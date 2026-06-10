@@ -21,3 +21,10 @@ reports/
 *.sqlite3
 playwright-report/
 test-results/
+.codegraph/
+.mempalace/
+var/
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

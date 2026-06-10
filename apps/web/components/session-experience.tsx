@@ -962,6 +962,11 @@ function BriefingDossier({
   snapshot: MarketSnapshot | null;
 }) {
   const scores = quantModelScores(snapshot, events, report, quantBrief);
+  const confirmedSnapshot = displayableSnapshot(snapshot);
+  const quantStatusLabel = quantBrief?.signal_label ?? (confirmedSnapshot ? "计算中" : "");
+  const quantStatusClass = quantBrief
+    ? quantSignalClass(quantBrief.signal_label)
+    : "bg-white text-[var(--teal-strong)]";
   const targetName = resolveTargetName(session, snapshot);
   const targetSymbol = resolveTargetSymbol(session, snapshot);
   const objectiveFacts = buildObjectiveFacts({
@@ -989,7 +994,7 @@ function BriefingDossier({
               行情、因子和客观事实作为讨论输入，不直接形成结论。
             </p>
           </div>
-          <div className="rounded-lg bg-[var(--bg-soft)] px-3 py-2 text-sm">
+          <div className="session-target-card rounded-lg bg-[var(--bg-soft)] px-3 py-2 text-sm">
             <div className="font-semibold">{targetName || "当前标的"}</div>
             <div className="mt-1 font-mono text-xs tabular-nums text-[var(--ink-soft)]">
               {targetSymbol || "等待标的确认"}
@@ -998,17 +1003,17 @@ function BriefingDossier({
         </div>
       </div>
 
-      <div className="grid gap-3 p-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(280px,1.08fr)]">
+      <div className="briefing-grid grid gap-3 p-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(280px,1.08fr)]">
         <div className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="briefing-metric-grid grid gap-3 sm:grid-cols-2">
             <Metric
-              label={snapshot?.quote_type === "realtime" ? "实时价" : "参考价"}
-              value={snapshot ? snapshot.latest_close.toString() : ""}
+              label={confirmedSnapshot?.quote_type === "realtime" ? "实时价" : "参考价"}
+              value={confirmedSnapshot ? confirmedSnapshot.latest_close.toString() : ""}
             />
             <Metric
               label="涨跌幅"
-              value={snapshot ? `${snapshot.pct_change}%` : ""}
-              tone={snapshot ? chinaMarketChangeTone(snapshot.pct_change) : "neutral"}
+              value={confirmedSnapshot ? `${confirmedSnapshot.pct_change}%` : ""}
+              tone={confirmedSnapshot ? chinaMarketChangeTone(confirmedSnapshot.pct_change) : "neutral"}
             />
             <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-white px-4 py-3 sm:col-span-2">
               <div className="min-w-0">
@@ -1017,11 +1022,11 @@ function BriefingDossier({
                   仅作为投委会讨论底稿
                 </div>
               </div>
-              <span
-                className={`shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${quantSignalClass(quantBrief?.signal_label)}`}
-              >
-                {quantBrief?.signal_label ?? ""}
-              </span>
+              {quantStatusLabel ? (
+                <span className={`shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${quantStatusClass}`}>
+                  {quantStatusLabel}
+                </span>
+              ) : null}
             </div>
           </div>
           <div className="rounded-lg bg-[var(--bg-soft)] p-4">
@@ -1046,31 +1051,41 @@ function BriefingDossier({
               <LineChart size={17} />
               量化模型底稿
             </div>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${quantSignalClass(quantBrief?.signal_label)}`}>
-              {quantBrief?.signal_label ?? ""}
-            </span>
+            {quantStatusLabel ? (
+              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${quantStatusClass}`}>
+                {quantStatusLabel}
+              </span>
+            ) : null}
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {scores.map((item) => (
-              <div key={item.label} className="rounded-lg bg-white px-3 py-2">
-                <div className="flex items-center justify-between gap-2 text-xs text-[var(--ink-soft)]">
-                  <span>{item.label}</span>
-                  <span className="font-mono tabular-nums">
-                    {typeof item.value === "number" ? item.value : ""}
-                  </span>
+          <div className="quant-score-grid mt-3 grid grid-cols-2 gap-2">
+            {scores.map((item) => {
+              const hasScore = typeof item.value === "number";
+              const scoreValue = hasScore ? item.value : null;
+              return (
+                <div key={item.label} className="rounded-lg bg-white px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 text-xs text-[var(--ink-soft)]">
+                    <span>{item.label}</span>
+                    <span
+                      className={`font-mono tabular-nums ${
+                        hasScore ? "" : item.status ? "font-sans text-[var(--teal-strong)]" : ""
+                      }`}
+                    >
+                      {hasScore ? item.value : item.status ?? ""}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 rounded-full bg-[var(--bg-soft)]">
+                    <div
+                      className={`h-1.5 rounded-full ${
+                        hasScore ? "bg-[var(--teal)]" : item.status ? "bg-[var(--teal)]/40" : "bg-[var(--line)]"
+                      }`}
+                      style={{
+                        width: `${scoreValue !== null ? Math.max(10, Math.min(100, scoreValue)) : item.status ? 36 : 0}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="mt-1.5 h-1.5 rounded-full bg-[var(--bg-soft)]">
-                  <div
-                    className={`h-1.5 rounded-full ${
-                      typeof item.value === "number" ? "bg-[var(--teal)]" : "bg-[var(--line)]"
-                    }`}
-                    style={{
-                      width: `${typeof item.value === "number" ? Math.max(10, Math.min(100, item.value)) : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs leading-5 text-[var(--ink-muted)]">
             底稿只作为讨论输入。最终结论必须经过多空质询、风控审查和组合经理收敛。
@@ -1267,6 +1282,7 @@ function ReportRail({
 }) {
   const targetName = resolveTargetName(session, snapshot);
   const targetSymbol = resolveTargetSymbol(session, snapshot);
+  const confirmedSnapshot = displayableSnapshot(snapshot);
   const action = report ? researchActionFromReport(report, quantBrief, snapshot) : null;
   const latestEvent = events.at(-1);
   const phaseInsight = report
@@ -1326,22 +1342,24 @@ function ReportRail({
           <div className="mt-1 font-mono text-xs tabular-nums text-[var(--ink-soft)]">
             {targetSymbol || "等待标的确认"}
           </div>
-          {snapshot ? (
+          {confirmedSnapshot ? (
             <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/65 pt-3 text-xs">
               <div>
-                <div className="text-[var(--ink-soft)]">实时价</div>
+                <div className="text-[var(--ink-soft)]">
+                  {confirmedSnapshot.quote_type === "realtime" ? "实时价" : "参考价"}
+                </div>
                 <div className="mt-1 font-mono font-semibold tabular-nums text-[var(--ink)]">
-                  {snapshot.latest_close}
+                  {confirmedSnapshot.latest_close}
                 </div>
               </div>
               <div>
                 <div className="text-[var(--ink-soft)]">涨跌幅</div>
                 <div
                   className={`mt-1 font-mono font-semibold tabular-nums ${chinaMarketChangeClass(
-                    snapshot.pct_change,
+                    confirmedSnapshot.pct_change,
                   )}`}
                 >
-                  {snapshot.pct_change}%
+                  {confirmedSnapshot.pct_change}%
                 </div>
               </div>
             </div>
@@ -1831,6 +1849,7 @@ function buildObjectiveFacts({
 }) {
   const targetLabel =
     targetName || targetSymbol ? `${targetName || "当前标的"}${targetSymbol ? ` ${targetSymbol}` : ""}` : "当前标的";
+  const confirmedSnapshot = displayableSnapshot(snapshot);
 
   if (quantBrief) {
     return [
@@ -1840,7 +1859,7 @@ function buildObjectiveFacts({
     ];
   }
 
-  if (!snapshot) {
+  if (!confirmedSnapshot) {
     return [
       `${targetLabel} 已进入本次投委会流程。`,
       "实时价格、涨跌幅、成交量仍在等待行情接口确认。",
@@ -1850,8 +1869,8 @@ function buildObjectiveFacts({
 
   return [
     `${targetLabel} 已进入本次投委会流程。`,
-    `${quoteStatusLabel(snapshot)}，刷新时间 ${formatQuoteTime(snapshot.updated_at)}。`,
-    `最新价 ${snapshot.latest_close}，涨跌幅 ${snapshot.pct_change}%，成交量 ${formatLargeNumber(snapshot.volume)}。`,
+    `${quoteStatusLabel(confirmedSnapshot)}，刷新时间 ${formatQuoteTime(confirmedSnapshot.updated_at)}。`,
+    `最新价 ${confirmedSnapshot.latest_close}，涨跌幅 ${confirmedSnapshot.pct_change}%，成交量 ${formatLargeNumber(confirmedSnapshot.volume)}。`,
     `当前已记录 ${events.length} 条专业会议发言。`,
   ];
 }
@@ -2196,6 +2215,7 @@ function QuantReportProgressPanel({
 }) {
   const targetName = resolveTargetName(session, snapshot);
   const targetSymbol = resolveTargetSymbol(session, snapshot);
+  const confirmedSnapshot = displayableSnapshot(snapshot);
   const milestones = [
     { label: "执行摘要", ready: events.length >= 1 },
     { label: "量化信号", ready: Boolean(snapshot) },
@@ -2229,20 +2249,20 @@ function QuantReportProgressPanel({
               {targetSymbol}
             </div>
           ) : null}
-          {snapshot ? (
+          {confirmedSnapshot ? (
             <>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                 <span className="font-mono tabular-nums text-[var(--ink-muted)]">
-                  {snapshot.latest_close}
+                  {confirmedSnapshot.latest_close}
                 </span>
                 <span
-                  className={`font-mono tabular-nums ${chinaMarketChangeClass(snapshot.pct_change)}`}
+                  className={`font-mono tabular-nums ${chinaMarketChangeClass(confirmedSnapshot.pct_change)}`}
                 >
-                  {snapshot.pct_change}%
+                  {confirmedSnapshot.pct_change}%
                 </span>
               </div>
               <div className="mt-2 text-[11px] text-[var(--ink-soft)]">
-                {quoteStatusLabel(snapshot)} · {formatQuoteTime(snapshot.updated_at)}
+                {quoteStatusLabel(confirmedSnapshot)} · {formatQuoteTime(confirmedSnapshot.updated_at)}
               </div>
             </>
           ) : (
@@ -2406,6 +2426,7 @@ function MeetingAside({
 }) {
   const targetName = resolveTargetName(session, snapshot);
   const targetSymbol = resolveTargetSymbol(session, snapshot);
+  const confirmedSnapshot = displayableSnapshot(snapshot);
 
   return (
     <div className="space-y-4">
@@ -2491,25 +2512,25 @@ function MeetingAside({
               {targetSymbol}
             </div>
           ) : null}
-          {snapshot ? (
+          {confirmedSnapshot ? (
             <>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <Metric
-                  label={snapshot.quote_type === "realtime" ? "实时价" : "价格"}
-                  value={snapshot.latest_close.toString()}
+                  label={confirmedSnapshot.quote_type === "realtime" ? "实时价" : "价格"}
+                  value={confirmedSnapshot.latest_close.toString()}
                 />
                 <Metric
                   label="涨跌幅"
-                  value={`${snapshot.pct_change}%`}
-                  tone={chinaMarketChangeTone(snapshot.pct_change)}
+                  value={`${confirmedSnapshot.pct_change}%`}
+                  tone={chinaMarketChangeTone(confirmedSnapshot.pct_change)}
                 />
               </div>
               <div className="mt-4 text-xs leading-5 text-[var(--ink-soft)]">
-                数据：{quoteStatusLabel(snapshot)}
+                数据：{quoteStatusLabel(confirmedSnapshot)}
                 <br />
-                刷新：{formatQuoteTime(snapshot.updated_at)}
+                刷新：{formatQuoteTime(confirmedSnapshot.updated_at)}
               </div>
-              {snapshot.quote_type !== "realtime" ? (
+              {confirmedSnapshot.quote_type !== "realtime" ? (
                 <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
                   实时行情暂未确认，请等待接口恢复后复核价格。
                 </div>
@@ -3567,6 +3588,21 @@ function chinaMarketChangeClass(value: number) {
   return "text-[var(--ink-muted)]";
 }
 
+function displayableSnapshot(snapshot: MarketSnapshot | null | undefined) {
+  if (!snapshot) return null;
+  if (snapshot.quote_type === "fallback") return null;
+  if (!Number.isFinite(snapshot.latest_close) || snapshot.latest_close <= 0) return null;
+  if (!Number.isFinite(snapshot.pct_change)) return null;
+
+  const source = snapshot.source.trim().toLowerCase();
+  if (!source) return null;
+  if (source.includes("test") || source.includes("mock") || source.includes("fallback")) {
+    return null;
+  }
+
+  return snapshot;
+}
+
 function quoteStatusLabel(snapshot: MarketSnapshot) {
   if (snapshot.quote_type === "realtime") return "实时行情已刷新";
   if (snapshot.quote_type === "daily") return "历史收盘待复核";
@@ -3656,12 +3692,18 @@ function formatLargeNumber(value: number) {
   return value.toLocaleString("zh-CN");
 }
 
+type QuantModelScoreItem = {
+  label: string;
+  status?: string;
+  value: number | null;
+};
+
 function quantModelScores(
   snapshot: MarketSnapshot | null,
   events: DecisionEvent[],
   report: ResearchReport | null,
   quantBrief: QuantBrief | null = null,
-) {
+): QuantModelScoreItem[] {
   if (quantBrief) {
     return [
       { label: "趋势因子", value: quantBrief.trend_score },
@@ -3669,20 +3711,20 @@ function quantModelScores(
       { label: "波动因子", value: quantBrief.volatility_score },
       { label: "量价因子", value: quantBrief.volume_score },
       { label: "风险约束", value: quantBrief.risk_score },
-      { label: "证据覆盖度", value: quantBrief.evidence_score },
+      { label: "信息完整指数", value: quantBrief.evidence_score },
     ];
   }
 
-  void snapshot;
   void events;
   void report;
+  const pendingStatus = displayableSnapshot(snapshot) ? "计算中" : undefined;
   return [
-    { label: "趋势因子", value: null },
-    { label: "动量因子", value: null },
-    { label: "波动因子", value: null },
-    { label: "量价因子", value: null },
-    { label: "风险约束", value: null },
-    { label: "证据覆盖度", value: null },
+    { label: "趋势因子", value: null, status: pendingStatus },
+    { label: "动量因子", value: null, status: pendingStatus },
+    { label: "波动因子", value: null, status: pendingStatus },
+    { label: "量价因子", value: null, status: pendingStatus },
+    { label: "风险约束", value: null, status: pendingStatus },
+    { label: "信息完整指数", value: null, status: pendingStatus },
   ];
 }
 
@@ -4256,7 +4298,22 @@ function cleanVisibleResearchText(value: string) {
       /([，,])?数据源为\s*(免费数据备用源|公开市场数据|AKShare[^。]*)。?/g,
       (_match, prefix: string | undefined) => `${prefix ?? ""}行情刷新时间已记录。`,
     )
+    .replace(
+      /[，,]?\s*来源[:：]?\s*(AKShare|Eastmoney|Tencent|Sina|yfinance|PublicEvidenceCrawler|东方财富)[^)]*\)/gi,
+      ")",
+    )
+    .replace(
+      /[，,]?\s*来源[:：]?\s*(AKShare|Eastmoney|Tencent|Sina|yfinance|PublicEvidenceCrawler|东方财富)[^；。,\n]*(?=[；。,\n]|$)/gi,
+      "",
+    )
+    .replace(
+      /\b(AKShare|Eastmoney|Tencent|Sina|yfinance|PublicEvidenceCrawler)\s+[A-Za-z0-9_().,/\- ]+/gi,
+      "",
+    )
+    .replace(/\bstock_[A-Za-z0-9_().,/\- ]+/gi, "")
     .replace(/数据源\s*(免费数据备用源|公开市场数据|AKShare[^，。]*)，数据截止/g, "行情刷新时间")
+    .replace(/未从公开接口取得/g, "暂未进入本轮可用指标")
+    .replace(/公开接口暂未返回/g, "本轮暂未取得")
     .replace(/最新收盘价?/g, "实时价")
     .replace(/数据截止/g, "行情刷新时间")
     .replace(/免费数据源/g, "公开数据源")

@@ -97,15 +97,73 @@ class QuantIndicator(BaseModel):
     detail: str
 
 
+class DataQualityCheck(BaseModel):
+    key: str
+    label: str
+    status: Literal["pass", "warn", "fail"]
+    score: int
+    detail: str
+
+
+class EvidenceFact(BaseModel):
+    category: Literal["财报", "公告", "新闻", "行业", "行情", "数据质量"]
+    title: str
+    summary: str
+    source: str
+    status: Literal["confirmed", "partial", "unavailable"] = "partial"
+    confidence: int = Field(ge=0, le=100)
+    published_at: datetime | None = None
+    effective_at: date | None = None
+    available_at: datetime | None = None
+    url: str | None = None
+
+
+class CrossSectionFactor(BaseModel):
+    key: str
+    label: str
+    value: float | str
+    unit: str = ""
+    percentile: float | None = Field(default=None, ge=0, le=100)
+    direction: Literal["positive", "negative", "neutral", "risk"] = "neutral"
+    detail: str
+
+
+class CrossSectionContext(BaseModel):
+    market: Market
+    symbol: str
+    name: str
+    data_as_of: str
+    universe_size: int = 0
+    peers_evaluated: int = 0
+    industry_name: str | None = None
+    rps_20: float | None = None
+    rps_60: float | None = None
+    industry_relative_strength: float | None = None
+    liquidity_rank: float | None = None
+    crowding_score: int = 0
+    factors: list[CrossSectionFactor] = Field(default_factory=list)
+    facts: list[str] = Field(default_factory=list)
+
+
+class ValidationCheck(BaseModel):
+    key: str
+    label: str
+    status: Literal["pass", "warn", "fail"]
+    detail: str
+
+
 class QuantBrief(BaseModel):
     market: Market
     symbol: str
     name: str
     source: str
     model_name: str = "pandas-ta-classic"
+    algorithm_version: str = "junyu-quant-brief-v2"
     generated_at: datetime
     data_as_of: str
     coverage_days: int
+    data_quality_score: int = 0
+    data_quality_grade: Literal["高", "中", "低", "待确认"] = "待确认"
     trend_score: int
     momentum_score: int
     volatility_score: int
@@ -113,6 +171,10 @@ class QuantBrief(BaseModel):
     risk_score: int
     evidence_score: int
     signal_label: Literal["偏多观察", "中性观察", "偏空观察", "数据待确认"]
+    data_quality_checks: list[DataQualityCheck] = Field(default_factory=list)
+    fact_chain: list[EvidenceFact] = Field(default_factory=list)
+    cross_section: CrossSectionContext | None = None
+    validation_checks: list[ValidationCheck] = Field(default_factory=list)
     indicators: list[QuantIndicator] = Field(default_factory=list)
     facts: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
