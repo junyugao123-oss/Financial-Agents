@@ -287,7 +287,7 @@ class FreeMarketDataProvider:
         row = _find_row_by_symbol(frame, symbol)
         price = _required_number(row, "最新价")
         pct_change = _required_number(row, "涨跌幅")
-        volume = _optional_number(row, "成交量")
+        volume = _required_nonnegative_number(row, "成交量")
         name = _clean_stock_name(str(row.get("名称") or ""))
         if _is_real_stock_name(name, market, symbol):
             _remember_display_name(market, symbol, name)
@@ -345,7 +345,7 @@ class FreeMarketDataProvider:
             raise ValueError("invalid Tencent quote payload")
 
         name = _clean_stock_name(values[1])
-        price = _required_float(values[3], "Tencent latest price")
+        price = _required_positive_float(values[3], "Tencent latest price")
         pct_change = _required_float(values[32], "Tencent pct_change")
         volume = _tencent_volume(market, values, price)
         data_as_of = _tencent_timestamp(values[30])
@@ -413,18 +413,20 @@ class FreeMarketDataProvider:
             if len(values) < 32:
                 raise ValueError("invalid Sina A-share quote payload")
             name = _clean_stock_name(values[0])
-            previous_close = float(values[2])
-            latest_close = float(values[3])
-            volume = float(values[8])
+            previous_close = _required_float(values[2], "Sina previous close")
+            latest_close = _required_float(values[3], "Sina latest price")
+            volume = _required_float(values[8], "Sina volume")
             data_as_of = f"{values[30]} {values[31]}"
-            pct_change = (latest_close / previous_close - 1) * 100 if previous_close else 0.0
+            if previous_close <= 0:
+                raise ValueError("invalid Sina previous close")
+            pct_change = (latest_close / previous_close - 1) * 100
         else:
             if len(values) < 19:
                 raise ValueError("invalid Sina HK quote payload")
             name = _clean_stock_name(values[1])
-            latest_close = float(values[6])
-            pct_change = float(values[8])
-            volume = float(values[12])
+            latest_close = _required_float(values[6], "Sina latest price")
+            pct_change = _required_float(values[8], "Sina pct_change")
+            volume = _required_float(values[12], "Sina volume")
             data_as_of = f"{values[17].replace('/', '-')} {values[18]}:00"
 
         known_name = DISPLAY_NAMES.get((market, symbol))
@@ -633,11 +635,16 @@ class FreeMarketDataProvider:
         if frame.empty:
             raise ValueError("empty market data frame")
 
-        latest = frame.iloc[-1]
-        close = float(latest.get("收盘", latest.get("close")))
-        pct_change = float(latest.get("涨跌幅", 0.0))
-        volume = float(latest.get("成交量", latest.get("volume", 0.0)))
-        data_as_of = str(latest.get("日期", latest.get("date", datetime.now().date())))
+        history = _normalize_history_frame(frame)
+        if len(history) < 2:
+            raise ValueError("daily market data needs at least two rows for pct_change")
+        latest = history.iloc[-1]
+        previous = history.iloc[-2]
+        close = _required_positive_float(latest["close"], "daily latest close")
+        previous_close = _required_positive_float(previous["close"], "daily previous close")
+        pct_change = (close / previous_close - 1) * 100
+        volume = _required_nonnegative_float(latest["volume"], "daily volume")
+        data_as_of = _format_history_timestamp(latest["date"])
 
         return MarketSnapshot(
             market=market,
@@ -697,29 +704,27 @@ class FreeMarketDataProvider:
 
         frame = _normalize_history_frame(intraday.reset_index())
         latest = frame.iloc[-1]
-        latest_close = float(latest["close"])
-        volume = float(frame["volume"].tail(240).sum() if quote_type == "realtime" else latest["volume"])
+        latest_close = _required_positive_float(latest["close"], "yfinance latest close")
+        volume = (
+            _required_nonnegative_float(frame["volume"].tail(240).sum(), "yfinance realtime volume")
+            if quote_type == "realtime"
+            else _required_nonnegative_float(latest["volume"], "yfinance daily volume")
+        )
         data_as_of = latest["date"].isoformat() if hasattr(latest["date"], "isoformat") else str(latest["date"])
 
-        pct_change = 0.0
-        try:
-            daily = yf.download(
-                ticker,
-                period="5d",
-                interval="1d",
-                auto_adjust=False,
-                progress=False,
-                threads=False,
-            )
-            if isinstance(daily.columns, pd.MultiIndex):
-                daily.columns = daily.columns.get_level_values(0)
-            daily_frame = _normalize_history_frame(daily.reset_index())
-            if len(daily_frame) >= 2:
-                previous_close = float(daily_frame.iloc[-2]["close"])
-                if previous_close:
-                    pct_change = (latest_close / previous_close - 1) * 100
-        except Exception:
-            pct_change = 0.0
+        daily = yf.download(
+            ticker,
+            period="5d",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=False,
+        )
+        if isinstance(daily.columns, pd.MultiIndex):
+            daily.columns = daily.columns.get_level_values(0)
+        daily_frame = _normalize_history_frame(daily.reset_index())
+        previous_close = _previous_close_for_quote(daily_frame, latest["date"], quote_type)
+        pct_change = (latest_close / previous_close - 1) * 100
 
         return MarketSnapshot(
             market=market,
@@ -1653,12 +1658,58 @@ def _required_number(row: Any, key: str) -> float:
     return value
 
 
-def _optional_number(row: Any, key: str) -> float:
+def _required_nonnegative_number(row: Any, key: str) -> float:
     try:
         value = float(row.get(key))
     except (TypeError, ValueError):
-        return 0.0
-    return 0.0 if isnan(value) else value
+        raise ValueError(f"missing realtime field: {key}")
+    if isnan(value) or value < 0:
+        raise ValueError(f"invalid realtime field: {key}")
+    return value
+
+
+def _required_positive_float(value: Any, field_name: str) -> float:
+    number = _safe_float(value)
+    if number is None or number <= 0:
+        raise ValueError(f"missing or invalid {field_name}")
+    return number
+
+
+def _required_nonnegative_float(value: Any, field_name: str) -> float:
+    number = _safe_float(value)
+    if number is None or number < 0:
+        raise ValueError(f"missing or invalid {field_name}")
+    return number
+
+
+def _format_history_timestamp(value: Any) -> str:
+    timestamp = pd.to_datetime(value, errors="coerce")
+    if pd.isna(timestamp):
+        raise ValueError("invalid history timestamp")
+    if getattr(timestamp, "time", lambda: None)() == datetime.min.time():
+        return timestamp.strftime("%Y-%m-%d")
+    return timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _previous_close_for_quote(daily_frame: pd.DataFrame, latest_date: Any, quote_type: str) -> float:
+    if len(daily_frame) < 2:
+        raise ValueError("daily quote frame needs at least two rows for pct_change")
+    prepared = daily_frame.copy()
+    prepared["_date"] = pd.to_datetime(prepared["date"], errors="coerce")
+    prepared = prepared.dropna(subset=["_date"]).sort_values("_date")
+    if len(prepared) < 2:
+        raise ValueError("daily quote frame has insufficient valid dates")
+
+    if quote_type == "realtime":
+        latest_ts = pd.to_datetime(latest_date, errors="coerce")
+        if pd.isna(latest_ts):
+            raise ValueError("invalid realtime quote timestamp")
+        candidates = prepared[prepared["_date"].dt.date < latest_ts.date()]
+        if candidates.empty:
+            raise ValueError("daily quote frame lacks previous close before realtime quote")
+        return _required_positive_float(candidates.iloc[-1]["close"], "previous daily close")
+
+    return _required_positive_float(prepared.iloc[-2]["close"], "previous daily close")
 
 
 def _normalize_history_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -1876,11 +1927,9 @@ def _eastmoney_volume(market: str, value: Any) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError):
-        return 0.0
-    if isnan(number):
-        return 0.0
-    if number <= 0:
-        return 0.0
+        raise ValueError("missing Eastmoney field: volume")
+    if isnan(number) or number < 0:
+        raise ValueError("invalid Eastmoney field: volume")
     return number * 100 if market == "A股" else number
 
 
@@ -1888,9 +1937,9 @@ def _eastmoney_timestamp(value: Any) -> str:
     try:
         timestamp = int(value)
     except (TypeError, ValueError):
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        raise ValueError("missing Eastmoney field: timestamp")
     if timestamp <= 0:
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        raise ValueError("invalid Eastmoney field: timestamp")
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -1919,17 +1968,24 @@ def _tencent_timestamp(value: str) -> str:
             return datetime.strptime(text, fmt).strftime("%Y-%m-%d %H:%M:%S")
         except ValueError:
             continue
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    raise ValueError("invalid Tencent quote timestamp")
 
 
 def _tencent_volume(market: str, values: list[str], price: float) -> float:
     if market == "港股":
-        return _optional_float(values, 36) or _optional_float(values, 6) or 0.0
+        volume = _optional_float(values, 36)
+        if volume is None:
+            volume = _optional_float(values, 6)
+        if volume is None or volume < 0:
+            raise ValueError("missing Tencent volume")
+        return volume
 
     packed = values[35].split("/") if len(values) > 35 else []
     raw_volume = _safe_float(packed[1]) if len(packed) >= 2 else _optional_float(values, 6)
     amount = _safe_float(packed[2]) if len(packed) >= 3 else None
-    if not raw_volume or raw_volume <= 0:
+    if raw_volume is None or raw_volume < 0:
+        raise ValueError("missing Tencent volume")
+    if raw_volume == 0:
         return 0.0
     if amount and price > 0:
         ratio = amount / (price * raw_volume)

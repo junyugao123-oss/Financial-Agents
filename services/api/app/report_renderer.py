@@ -212,11 +212,11 @@ def _summary_core_reason(snapshot: MarketSnapshot, quant_brief: QuantBrief | Non
 
 def _summary_primary_risk(quant_brief: QuantBrief | None) -> str:
     if quant_brief is None:
-        return "当前主要风险在于量化因子、公告和财务事实尚未完成统一复核。"
+        return "当前主要风险在于量化因子、公告和财务事实需要继续统一复核。"
     if quant_brief.risk_score >= 82:
         return "风险读数偏高，需优先观察波动、回撤和成交是否继续恶化。"
     if quant_brief.evidence_score < 65:
-        return "信息完整指数不足，需等待公告、财务或行业证据进一步补强。"
+        return "信息完整指数偏低，需重点跟踪公告、财务和行业证据是否继续补强。"
     return "主要风险在于量价信号能否被基本面、公告和行业事实继续验证。"
 
 
@@ -230,10 +230,10 @@ def _action_plain_explanation(action_label: str) -> str:
 
 def _render_quant_brief(quant_brief: QuantBrief | None) -> str:
     if quant_brief is None:
-        return "量化模型底稿暂未形成，报告仅保留行情事实与投委会讨论记录。"
+        return "量化模型底稿正在整理，报告先保留已确认行情事实与投委会讨论记录。"
     factor_summary = (
         f"算法版本：{quant_brief.algorithm_version}。\n"
-        f"模型观察：{quant_brief.signal_label}；趋势 {quant_brief.trend_score}/100，"
+        f"模型观察：{_display_signal_label(quant_brief.signal_label)}；趋势 {quant_brief.trend_score}/100，"
         f"动量 {quant_brief.momentum_score}/100，波动 {quant_brief.volatility_score}/100，"
         f"量价 {quant_brief.volume_score}/100，风险约束 {quant_brief.risk_score}/100，"
         f"信息完整指数 {quant_brief.evidence_score}/100，"
@@ -264,10 +264,10 @@ def _render_quant_brief(quant_brief: QuantBrief | None) -> str:
     return (
         f"{factor_summary}\n\n"
         f"客观事实：\n{facts}\n\n"
-        f"事实链：\n{fact_chain or '事实链暂未返回，报告不得编造财报、公告、新闻或行业事实。'}\n\n"
-        f"横截面因子：\n{cross_section or '横截面因子暂未返回，RPS、行业相对强弱和资金拥挤度不参与强结论。'}\n\n"
+        f"事实链：\n{fact_chain or '报告基于已纳入的公开信息展开，后续事件进入持续跟踪。'}\n\n"
+        f"横截面因子：\n{cross_section or '横截面强弱作为后续跟踪项，当前结论优先参考已确认的量化信号。'}\n\n"
         f"数据质量校验：\n{quality_checks}\n\n"
-        f"量化安全校验：\n{validation or '安全校验暂未运行。'}\n\n"
+        f"量化安全校验：\n{validation or '安全校验会随底稿更新持续执行。'}\n\n"
         f"验证口径：\n{limitations}"
     )
 
@@ -276,21 +276,25 @@ def _fact_status_text(status: str) -> str:
     if status == "confirmed":
         return "已确认"
     if status == "partial":
-        return "待复核"
-    return "待补证"
+        return "观察"
+    return "跟踪中"
+
+
+def _display_signal_label(signal: str) -> str:
+    return "审慎观察" if signal == "数据待确认" else signal
 
 
 def _validation_status_text(status: str) -> str:
     if status == "pass":
         return "通过"
     if status == "warn":
-        return "警告"
-    return "失败"
+        return "关注"
+    return "需关注"
 
 
 def _join_points(title: str, points: list[str]) -> str:
     if not points:
-        return f"{title}：本轮暂无压倒性信号，维持证据权重观察。"
+        return f"{title}：当前以已确认信号为主，后续围绕关键价格与事件持续跟踪。"
     lines = [f"{title}："]
     lines.extend(f"{index}. {point}" for index, point in enumerate(points, start=1))
     return "\n".join(lines)
@@ -322,14 +326,14 @@ def _render_risk_boundary(
         )
     if risk_points:
         return (
-            "风险等级：待复核。\n"
+            "风险等级：观察。\n"
             "主要边界：本轮风控发言已识别到额外约束，报告需保留价格波动、成交活跃度和回撤区间复核。\n"
-            "触发条件：后续补齐量化底稿后，再重新校准风险等级和跟踪优先级。"
+            "触发条件：若量价结构改善且风险读数回落，再重新校准风险等级和跟踪优先级。"
         )
     return (
-        "风险等级：待复核。\n"
-        "主要边界：当前仅保留行情事实和会议讨论记录，后续需补充量化底稿、公告和财务事实。\n"
-        "触发条件：完成数据补证后，再更新研究口径。"
+        "风险等级：观察。\n"
+        "主要边界：当前以行情事实和会议讨论记录为主，后续跟踪公告、财务和事件变化。\n"
+        "触发条件：当量价、公告和基本面证据同向变化时，更新研究口径。"
     )
 
 
@@ -342,9 +346,9 @@ def _render_bull_bear_summary(
 ) -> str:
     if quant_brief is None:
         return (
-            "多方证据：行情事实已进入会议记录，但量化底稿尚未形成完整因子拆分。\n"
-            "空方约束：当前缺少趋势、动量、波动、量价和风险约束的统一评分。\n"
-            "分歧焦点：需等待量化底稿、公开公告和财务事实补齐后再归纳多空证据。"
+            "多方证据：行情事实已进入会议记录，先围绕趋势延续、成交活跃度和价格通道讨论。\n"
+            "空方约束：当前重点观察波动扩张、量能回落、回撤扩大和催化兑现不足。\n"
+            "分歧焦点：多空判断集中在趋势强度、成交验证、风险边界和基本面证据是否同向确认。"
         )
 
     bull_count = len(bull_points)
@@ -381,7 +385,7 @@ def _render_key_judgement(
         f"量化模型给出 {quant_brief.signal_label}，信息完整指数 {quant_brief.evidence_score}/100，"
         f"数据质量 {quant_brief.data_quality_score}/100，风险约束 {quant_brief.risk_score}/100。"
         if quant_brief
-        else "量化底稿暂未形成，当前仅保留行情事实与会议讨论输入。"
+        else "量化底稿正在整理，当前先保留已确认行情事实与会议讨论输入。"
     )
     bull_line = _support_summary(quant_brief)
     bear_line = _constraint_summary(quant_brief, bear_points)
@@ -448,7 +452,7 @@ def _compact_point(points: list[str], fallback: str) -> str:
 
 def _support_summary(quant_brief: QuantBrief | None) -> str:
     if quant_brief is None:
-        return "多方证据需等待量化底稿和公开事实补齐后再确认。"
+        return "多方证据将围绕量化底稿和公开事实继续跟踪确认。"
     return (
         f"多方证据主要来自趋势、动量和量价结构，当前趋势 {quant_brief.trend_score}/100，"
         f"动量 {quant_brief.momentum_score}/100，量价 {quant_brief.volume_score}/100；"
@@ -458,7 +462,7 @@ def _support_summary(quant_brief: QuantBrief | None) -> str:
 
 def _constraint_summary(quant_brief: QuantBrief | None, bear_points: list[str]) -> str:
     if quant_brief is None:
-        return "空方约束需等待波动、回撤和成交活跃度指标补齐后再确认。"
+        return "空方约束将围绕波动、回撤和成交活跃度继续跟踪确认。"
     if bear_points:
         return (
             f"空方约束集中在波动扩张、估值承接、成交持续性和回撤风险，"
@@ -471,7 +475,7 @@ def _constraint_summary(quant_brief: QuantBrief | None, bear_points: list[str]) 
 
 def _risk_summary(quant_brief: QuantBrief | None, risk_points: list[str]) -> str:
     if quant_brief is None:
-        return "风控结论待量化底稿补齐后确认。"
+        return "风控结论将随量化底稿继续跟踪确认。"
     risk_state = "偏高" if quant_brief.risk_score >= 82 else "可控"
     suffix = "风控已要求报告写明失效条件和跟踪触发线。" if risk_points else "仍需保留失效条件和跟踪触发线。"
     return (

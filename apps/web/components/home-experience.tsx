@@ -389,7 +389,7 @@ export function HomeExperience() {
         .catch((err) => {
           if (err instanceof DOMException && err.name === "AbortError") return;
           setRemoteSuggestions([]);
-          setSearchError(err instanceof Error ? err.message : "股票池检索失败");
+          setSearchError("搜索正在同步，请直接输入代码或稍后再试。");
         })
         .finally(() => {
           if (!controller.signal.aborted) {
@@ -424,8 +424,8 @@ export function HomeExperience() {
         model_name: "deepseek-v4-pro",
       });
       router.push(`/session/${session.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "创建研究任务失败");
+    } catch {
+      setError("研究任务正在准备，请稍后再试或换一个标的。");
     } finally {
       setIsSubmitting(false);
     }
@@ -1005,8 +1005,8 @@ export function HomeExperience() {
                         );
                       })}
                       {searchError && localSuggestions.length > 0 ? (
-                        <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-                          全市场股票池暂未返回，当前先展示代码匹配结果。
+                        <div className="rounded-lg bg-teal-50 px-3 py-2 text-xs leading-5 text-teal-800">
+                          已根据当前输入生成候选结果。
                         </div>
                       ) : null}
                     </>
@@ -1017,8 +1017,8 @@ export function HomeExperience() {
                   ) : (
                     <div className="rounded-lg bg-[var(--bg-soft)] px-3 py-2.5 text-sm text-[var(--ink-muted)]">
                       {searchError
-                        ? "股票池暂未返回，请输入代码或稍后重试。"
-                        : "暂未匹配到标的，请换公司名、简称或代码片段。"}
+                        ? "请输入公司名、简称或代码继续定位。"
+                        : "请输入更完整的公司名、简称或代码片段。"}
                     </div>
                   )}
                 </div>

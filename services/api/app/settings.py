@@ -5,7 +5,26 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
+def _find_project_root(start: Path) -> Path:
+    current = start.resolve()
+    if current.is_file():
+        current = current.parent
+
+    api_root: Path | None = None
+    for candidate in (current, *current.parents):
+        if api_root is None and (candidate / "pyproject.toml").exists() and (candidate / "app").is_dir():
+            api_root = candidate
+        if (candidate / "package.json").exists() and (candidate / "services" / "api").exists():
+            return candidate
+        if (candidate / "docker-compose.yml").exists() and (candidate / "services").exists():
+            return candidate
+        if (candidate / ".git").exists() and (candidate / "services").exists():
+            return candidate
+
+    return api_root or current
+
+
+ROOT_DIR = _find_project_root(Path(__file__))
 
 
 class Settings(BaseSettings):

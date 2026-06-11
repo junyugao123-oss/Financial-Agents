@@ -134,7 +134,7 @@ SCRIPT = [
         "role": "量化研究员",
         "event_type": "量化裁判",
         "title": "复核强弱与突破信号",
-        "content": "量化裁判口径：趋势、相对强弱、突破距离、波动和成交若出现背离，多头与空头都要降权。量化信号只提供可质询、可复核的事实底稿。",
+        "content": "量化裁判口径：趋势、相对强弱、突破距离、波动和成交若出现背离，多头与空头都要审慎处理。量化信号只提供可质询、可复核的事实底稿。",
         "stance": "neutral",
         "reply_to": 10,
         "target_role": "多头研究员 / 空头研究员",
@@ -203,7 +203,7 @@ ADDITIONAL_DEBATE_SCRIPT = [
         "role": "基本面分析师",
         "event_type": "估值质询",
         "title": "追问盈利与估值承接",
-        "content": "基本面补充质询：若多头认为估值可修复，需要解释利润率、收入可见度和行业景气由谁承接；若空头认为估值偏贵，也要给出同业比较和安全边际缺口。",
+        "content": "基本面补充质询：若多头认为估值可修复，需要解释利润率、收入可见度和行业景气由谁承接；若空头认为估值偏贵，也要给出同业比较和安全边际边界。",
         "stance": "neutral",
         "reply_to": None,
         "target_role": "多头研究员 / 空头研究员",
@@ -309,7 +309,7 @@ class DecisionRoomEngine:
             for event in self.repository.list_events(session.id)
         ]
         quant_summary = brief_summary(quant_brief)
-        evidence_digest = _committee_evidence_digest(quant_brief)
+        base_evidence_digest = _committee_evidence_digest(quant_brief)
         meeting_script = _script_for_session(session.id)
         for sequence, item in enumerate(meeting_script, start=1):
             if sequence < start_sequence:
@@ -331,7 +331,7 @@ class DecisionRoomEngine:
                 symbol=session.symbol,
                 snapshot_summary=_snapshot_summary(snapshot),
                 quant_brief_summary=quant_summary,
-                evidence_digest=evidence_digest,
+                evidence_digest=_role_evidence_digest(quant_brief, role, base_evidence_digest),
                 recent_context="\n".join(recent_context[-4:]),
                 target_role=item["target_role"],
             )
@@ -442,8 +442,21 @@ def _strip_user_visible_source_noise(text: str) -> str:
         cleaned,
         flags=re.IGNORECASE,
     )
-    cleaned = cleaned.replace("未从公开接口取得", "暂未进入本轮可用指标")
-    cleaned = cleaned.replace("公开接口暂未返回", "本轮暂未取得")
+    cleaned = cleaned.replace("未从公开接口取得", "进入后续跟踪")
+    cleaned = cleaned.replace("公开接口暂未返回", "进入后续跟踪")
+    cleaned = cleaned.replace("暂未进入本轮可用指标", "进入后续跟踪")
+    cleaned = cleaned.replace("本轮暂未取得", "进入后续跟踪")
+    cleaned = cleaned.replace("暂未返回", "进入后续跟踪")
+    cleaned = cleaned.replace("未取得", "进入后续跟踪")
+    cleaned = cleaned.replace("待补证", "跟踪中")
+    cleaned = cleaned.replace("待复核", "观察")
+    cleaned = cleaned.replace("数据缺口", "研究边界")
+    cleaned = cleaned.replace("信息缺口", "证据边界")
+    cleaned = cleaned.replace("质量缺口", "质量边界")
+    cleaned = cleaned.replace("缺口", "跟踪项")
+    cleaned = cleaned.replace("降权", "审慎处理")
+    cleaned = cleaned.replace("失败", "需关注")
+    cleaned = cleaned.replace("接口", "数据通道")
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
 
@@ -515,7 +528,7 @@ def _enrich_content(
             f"{content} 空头压测集中在风险约束 {quant_brief.risk_score}/100、"
             f"波动 {quant_brief.volatility_score}/100、信息完整指数 {quant_brief.evidence_score}/100。"
             f"反证材料：{_indicator_digest(quant_brief, ('atr', 'drawdown_60', 'gap', 'event_risk', 'fund_debt_ratio', 'fund_valuation_percentile'))}"
-            f"质量缺口：{_quality_digest(quant_brief)}。"
+            f"质量边界：{_quality_digest(quant_brief)}。"
             "多头必须证明强势不是拥挤交易，也不是公告与盈利证据不足时的情绪外推。"
         )
     if role == "风控负责人" and quant_brief:
@@ -524,7 +537,7 @@ def _enrich_content(
             f"波动 {quant_brief.volatility_score}/100，信息完整指数 {quant_brief.evidence_score}/100，"
             f"数据质量 {quant_brief.data_quality_score}/100。"
             f"风险指标：{_indicator_digest(quant_brief, ('atr', 'boll', 'drawdown_60', 'event_risk'))}"
-            "报告必须把触发线、失效线和信息缺口分开写。"
+            "报告必须把触发线、失效线和证据边界分开写。"
         )
     if role == "组合经理" and quant_brief:
         return (
@@ -545,7 +558,7 @@ def _snapshot_summary(snapshot: MarketSnapshot) -> str:
 
 def _committee_evidence_digest(quant_brief: QuantBrief | None) -> str:
     if not quant_brief:
-        return "量化底稿暂未生成，角色只能围绕行情事实和数据缺口发言。"
+        return "量化底稿正在整理，角色先围绕已确认行情事实和研究边界发言。"
     parts = [
         (
             f"模型信号 {quant_brief.signal_label}; 趋势 {quant_brief.trend_score}/100; "
@@ -556,14 +569,202 @@ def _committee_evidence_digest(quant_brief: QuantBrief | None) -> str:
         ),
         f"关键因子：{_indicator_digest(quant_brief, _core_indicator_keys())}",
         f"事实链：{_fact_digest(quant_brief, limit=5)}",
+        f"证据账本：{_ledger_digest(quant_brief)}",
         f"数据质量：{_quality_digest(quant_brief)}",
         f"验证：{_validation_digest(quant_brief)}",
     ]
     return " ".join(part for part in parts if part).strip()[:1800]
 
 
+def _role_evidence_digest(
+    quant_brief: QuantBrief | None,
+    role: str,
+    base_digest: str,
+) -> str:
+    if not quant_brief:
+        return base_digest
+    role_keys = _role_indicator_keys(role)
+    role_facts_limit = 4 if role in {"首席策略官", "报告编辑"} else 3
+    parts = [
+        f"角色证据包：{role}。",
+        (
+            f"共用底稿：{quant_brief.signal_label}；趋势 {quant_brief.trend_score}/100，"
+            f"动量 {quant_brief.momentum_score}/100，量价 {quant_brief.volume_score}/100，"
+            f"风险 {quant_brief.risk_score}/100，信息完整指数 {quant_brief.evidence_score}/100，"
+            f"数据质量 {quant_brief.data_quality_score}/100。"
+        ),
+        f"本角色重点因子：{_indicator_digest(quant_brief, role_keys)}",
+    ]
+    if role in {"数据助理", "首席策略官", "风控负责人", "报告编辑"}:
+        parts.append(f"数据与校验：{_quality_digest(quant_brief)}")
+    if quant_brief.evidence_ledger:
+        parts.append(f"证据账本重点：{_ledger_digest(quant_brief, _role_ledger_categories(role))}")
+    if role in {"量化研究员", "风控负责人", "组合经理", "报告编辑"}:
+        parts.append(f"量化安全校验：{_validation_digest(quant_brief)}")
+    if role in {"基本面分析师", "多头研究员", "空头研究员", "组合经理", "报告编辑"}:
+        parts.append(f"事实证据：{_fact_digest(quant_brief, limit=role_facts_limit)}")
+    parts.append(_role_instruction(role))
+    return " ".join(part for part in parts if part).strip()[:1800]
+
+
+def _role_indicator_keys(role: str) -> tuple[str, ...]:
+    mapping: dict[str, tuple[str, ...]] = {
+        "首席策略官": (
+            "trusted_data_weight",
+            "information_integrity",
+            "factor_validity",
+            "relative_strength",
+            "financial_quality",
+            "event_quality",
+            "rps_proxy",
+            "event_sentiment",
+            "event_risk",
+            "fund_valuation_percentile",
+            "atr",
+        ),
+        "数据助理": (
+            "trusted_data_weight",
+            "data_quality",
+            "information_integrity",
+            "factor_validity",
+            "fund_revenue",
+            "event_sentiment",
+        ),
+        "量化研究员": (
+            "trusted_data_weight",
+            "ma_gap",
+            "macd",
+            "rsi",
+            "adx",
+            "volume_ratio",
+            "volume_price_confirmation",
+            "relative_strength",
+            "factor_validity",
+            "rps_proxy",
+            "rps_20",
+            "rps_60",
+            "crowding",
+        ),
+        "技术分析师": (
+            "ma",
+            "ma_gap",
+            "macd",
+            "rsi",
+            "boll",
+            "atr",
+            "volume_ratio",
+            "volume_price_confirmation",
+            "relative_strength",
+            "breakout_60",
+            "turtle_channel",
+        ),
+        "基本面分析师": (
+            "financial_quality",
+            "event_quality",
+            "announcement_risk",
+            "fund_revenue",
+            "fund_profit",
+            "fund_cashflow",
+            "fund_gross_margin",
+            "fund_roe",
+            "fund_debt_ratio",
+            "fund_valuation_percentile",
+            "event_forecast",
+        ),
+        "多头研究员": (
+            "relative_strength",
+            "volume_price_confirmation",
+            "event_quality",
+            "financial_quality",
+            "ma_gap",
+            "macd",
+            "rsi",
+            "volume_ratio",
+            "rps_proxy",
+            "rps_20",
+            "event_sentiment",
+            "fund_profit",
+            "fund_roe",
+        ),
+        "空头研究员": (
+            "announcement_risk",
+            "factor_validity",
+            "financial_quality",
+            "atr",
+            "boll",
+            "drawdown_60",
+            "gap",
+            "event_risk",
+            "fund_debt_ratio",
+            "fund_valuation_percentile",
+            "trusted_data_weight",
+        ),
+        "风控负责人": (
+            "risk_reading",
+            "trusted_data_weight",
+            "information_integrity",
+            "announcement_risk",
+            "factor_validity",
+            "atr",
+            "boll",
+            "drawdown_60",
+            "gap",
+            "event_risk",
+        ),
+        "组合经理": (
+            "trusted_data_weight",
+            "information_integrity",
+            "relative_strength",
+            "financial_quality",
+            "event_quality",
+            "factor_validity",
+            "rps_proxy",
+            "rps_20",
+            "event_sentiment",
+            "event_risk",
+            "fund_valuation_percentile",
+            "drawdown_60",
+        ),
+        "报告编辑": (
+            "trusted_data_weight",
+            "information_integrity",
+            "data_quality",
+            "financial_quality",
+            "event_quality",
+            "factor_validity",
+            "fund_revenue",
+            "event_sentiment",
+            "event_risk",
+            "atr",
+        ),
+    }
+    return mapping.get(role, _core_indicator_keys())
+
+
+def _role_instruction(role: str) -> str:
+    instructions = {
+        "首席策略官": "发言目标：定义研究边界，要求所有结论回到证据、风险和可追踪条件。",
+        "数据助理": "发言目标：只陈述已校验事实和研究边界，不能替投委会下判断。",
+        "量化研究员": "发言目标：拆解多因子信号，说明趋势、动量、量价和验证测试如何共同影响底稿。",
+        "技术分析师": "发言目标：判断量价结构、突破有效性和关键失效区间。",
+        "基本面分析师": "发言目标：用盈利质量、现金流、ROE、负债和估值分位裁判多空证据。",
+        "多头研究员": "发言目标：提出上行证据链，同时说清楚升级条件和必须被验证的假设。",
+        "空头研究员": "发言目标：用波动、回撤、估值和证据边界压测多头叙事，指出审慎条件。",
+        "风控负责人": "发言目标：把风险读数、数据质量和延迟校验转化为明确风险边界。",
+        "组合经理": "发言目标：收敛多空分歧，形成研究建议、跟踪优先级和失效条件。",
+        "报告编辑": "发言目标：把会议纪要压缩成机构式报告语言，保留观点、证据和风险边界。",
+    }
+    return instructions.get(role, "发言目标：基于证据给出专业判断。")
+
+
 def _core_indicator_keys() -> tuple[str, ...]:
     return (
+        "trusted_data_weight",
+        "factor_validity",
+        "relative_strength",
+        "financial_quality",
+        "event_quality",
+        "announcement_risk",
         "rps_proxy",
         "rps_20",
         "rps_60",
@@ -593,7 +794,7 @@ def _indicator_digest(quant_brief: QuantBrief, keys: tuple[str, ...]) -> str:
             detail = f"{detail[:56]}..."
         direction = _indicator_direction_text(indicator.direction)
         pieces.append(f"{indicator.label}={value}（{direction}，{detail}）")
-    return "；".join(pieces[:7]) or "对应因子暂未返回，需降低该维度表达强度"
+    return "；".join(pieces[:7]) or "对应因子进入后续跟踪，需保持该维度表达审慎"
 
 
 def _indicator_direction_text(direction: str) -> str:
@@ -613,7 +814,7 @@ def _fact_digest(quant_brief: QuantBrief, *, limit: int) -> str:
             for fact in quant_brief.fact_chain
             if fact.status != "unavailable"
         ]
-    return "；".join(facts[:limit]) if facts else "暂无可确认事实，必须把信息缺口写入判断"
+    return "；".join(facts[:limit]) if facts else "当前事实摘要以已确认信息为主，必须把研究边界写入判断"
 
 
 def _quality_digest(quant_brief: QuantBrief | None) -> str:
@@ -633,9 +834,58 @@ def _quality_digest(quant_brief: QuantBrief | None) -> str:
     return "；".join(pieces)
 
 
+def _role_ledger_categories(role: str) -> set[str]:
+    mapping: dict[str, set[str]] = {
+        "首席策略官": {"可信数据层", "量化安全", "横截面因子", "财报数据", "公告数据"},
+        "数据助理": {"实时行情", "历史行情", "财报数据", "公告数据", "新闻事件", "行业数据"},
+        "量化研究员": {"历史行情", "横截面因子", "量化安全", "可信数据层"},
+        "技术分析师": {"实时行情", "历史行情", "横截面因子"},
+        "基本面分析师": {"财报数据", "公告数据", "新闻事件", "行业数据"},
+        "多头研究员": {"横截面因子", "新闻事件", "公告数据", "财报数据"},
+        "空头研究员": {"量化安全", "财报数据", "公告数据", "新闻事件", "可信数据层"},
+        "风控负责人": {"量化安全", "可信数据层", "实时行情", "公告数据"},
+        "组合经理": {"可信数据层", "横截面因子", "财报数据", "量化安全"},
+        "报告编辑": {"可信数据层", "财报数据", "公告数据", "新闻事件", "量化安全"},
+    }
+    return mapping.get(role, set())
+
+
+def _ledger_digest(
+    quant_brief: QuantBrief,
+    categories: set[str] | None = None,
+) -> str:
+    items = quant_brief.evidence_ledger or []
+    if categories:
+        items = [item for item in items if item.category in categories]
+    if not items:
+        return "证据账本进入后续跟踪，所有角色必须保持审慎表达"
+    priority = sorted(
+        items,
+        key=lambda item: {
+            "blocked": 0,
+            "missing": 1,
+            "partial": 2,
+            "available": 3,
+        }.get(item.status, 4),
+    )
+    pieces: list[str] = []
+    for item in priority[:5]:
+        pieces.append(f"{item.label}{item.score}/100（{_ledger_status_text(item.status)}）")
+    return "；".join(pieces)
+
+
+def _ledger_status_text(status: str) -> str:
+    return {
+        "available": "可用",
+        "partial": "观察",
+        "missing": "跟踪中",
+        "blocked": "审慎",
+    }.get(status, "观察")
+
+
 def _validation_digest(quant_brief: QuantBrief | None) -> str:
     if not quant_brief or not quant_brief.validation_checks:
-        return "验证套件暂未返回"
+        return "验证套件进入后续跟踪"
     priority = sorted(
         quant_brief.validation_checks,
         key=lambda check: {"fail": 0, "warn": 1, "pass": 2}.get(check.status, 3),

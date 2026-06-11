@@ -63,6 +63,7 @@ def test_build_quant_brief_from_history():
         "fact_chain",
         "cross_section",
         "quant_validation",
+        "trusted_data_layer",
     }
     assert brief.trend_score > 50
     assert brief.evidence_score >= 68
@@ -82,10 +83,55 @@ def test_build_quant_brief_from_history():
         "price_position_120",
         "breakout_60",
         "turtle_channel",
+        "trusted_data_weight",
+        "financial_quality",
+        "event_quality",
+        "announcement_risk",
+        "factor_validity",
+        "relative_strength",
+        "industry_strength",
+        "volume_price_confirmation",
     }
+    assert {item.key for item in brief.evidence_ledger} >= {
+        "realtime_quote",
+        "historical_price",
+        "financial_statement",
+        "announcement_events",
+        "news_events",
+        "industry_data",
+        "cross_section_factors",
+        "quant_safety",
+        "trusted_data_layer",
+    }
+    assert {item.key for item in brief.factor_results} >= {
+        "trend_factor",
+        "momentum_factor",
+        "volatility_factor",
+        "volume_price_factor",
+        "risk_factor",
+        "information_integrity",
+        "data_quality_factor",
+        "trusted_data_factor",
+        "financial_quality",
+        "event_quality",
+        "announcement_risk",
+        "factor_validity",
+        "relative_strength",
+        "industry_strength",
+        "volume_price_confirmation",
+    }
+    assert all(0 <= item.score <= 100 for item in brief.factor_results)
+    assert all(0 <= item.confidence <= 100 for item in brief.factor_results)
+    assert all(item.evidence_keys for item in brief.factor_results)
+    assert len({item.score for item in brief.factor_results if item.available}) > 4
+    ledger_statuses = {item.status for item in brief.evidence_ledger}
+    assert ledger_statuses <= {"available", "partial", "missing", "blocked"}
     assert brief.facts
     assert any("历史位置强度" in item.label for item in brief.indicators)
     assert any("量化安全校验" in fact for fact in brief.facts)
+    assert any("可信数据层" in fact for fact in brief.facts)
+    assert any("证据账本" in fact for fact in brief.facts)
+    assert any("因子底稿" in fact for fact in brief.facts)
     assert brief.validation_checks
 
 
@@ -109,8 +155,11 @@ def test_build_quant_brief_includes_fundamental_and_event_factor_layer():
             [
                 {
                     "报告期": "2026-03-31",
+                    "披露日期": "2026-04-25",
                     "营业总收入": "12.50亿",
+                    "营业总收入同比增长率": "18.4%",
                     "净利润": "1.20亿",
+                    "净利润同比增长率": "21.5%",
                     "每股经营现金流": "0.62",
                     "销售毛利率": "42.5%",
                     "净资产收益率": "13.8%",
@@ -167,16 +216,53 @@ def test_build_quant_brief_includes_fundamental_and_event_factor_layer():
         "fund_roe",
         "fund_debt_ratio",
         "fund_valuation_percentile",
+        "fund_growth_quality",
+        "fund_profitability_quality",
+        "fund_balance_sheet_risk",
+        "fund_valuation_safety",
         "event_sentiment",
         "event_risk",
         "event_forecast",
+        "event_freshness",
+        "event_catalyst",
+        "event_regulatory_risk",
+        "financial_quality",
+        "event_quality",
+        "announcement_risk",
+        "factor_validity",
+        "relative_strength",
+        "volume_price_confirmation",
     }
     quality_keys = {item.key for item in brief.data_quality_checks}
     assert quality_keys >= {
         "fundamental_factor_coverage",
         "event_factor_coverage",
+        "financial_timeline",
+        "event_timeline",
+        "source_reconciliation",
         "evidence_factor_layer",
+        "trusted_data_layer",
     }
+    trusted_check = next(item for item in brief.data_quality_checks if item.key == "trusted_data_layer")
+    trusted_indicator = next(item for item in brief.indicators if item.key == "trusted_data_weight")
+    financial_timeline = next(item for item in brief.data_quality_checks if item.key == "financial_timeline")
+    event_timeline = next(item for item in brief.data_quality_checks if item.key == "event_timeline")
+    assert trusted_check.score == trusted_indicator.value
+    assert trusted_check.status in {"pass", "warn"}
+    assert financial_timeline.status == "pass"
+    assert event_timeline.status == "pass"
+    assert "财报公告新闻" in trusted_check.detail
+    financial_ledger = next(item for item in brief.evidence_ledger if item.key == "financial_statement")
+    event_ledger = next(item for item in brief.evidence_ledger if item.key == "announcement_events")
+    assert financial_ledger.status in {"available", "partial"}
+    assert event_ledger.status in {"available", "partial"}
+    assert "财报数据" == financial_ledger.category
+    financial_factor = next(item for item in brief.factor_results if item.key == "financial_quality")
+    event_factor = next(item for item in brief.factor_results if item.key == "event_quality")
+    assert financial_factor.available
+    assert event_factor.available
+    assert "financial_statement" in financial_factor.evidence_keys
+    assert "announcement_events" in event_factor.evidence_keys
     assert any("财报因子" in fact for fact in brief.facts)
     assert any("事件因子" in fact for fact in brief.facts)
     visible_text = "\n".join(
@@ -189,6 +275,52 @@ def test_build_quant_brief_includes_fundamental_and_event_factor_layer():
     assert "AKShare" not in visible_text
     assert "stock_" not in visible_text
     assert "来源" not in visible_text
+
+
+def test_build_quant_brief_blocks_future_financial_disclosure():
+    start = datetime.now() - timedelta(days=150)
+    rows = []
+    for index in range(150):
+        close = 45 + index * 0.05
+        rows.append(
+            {
+                "date": start + timedelta(days=index),
+                "open": close - 0.08,
+                "high": close + 0.28,
+                "low": close - 0.22,
+                "close": close,
+                "volume": 120_000 + index * 800,
+            }
+        )
+
+    brief = build_quant_brief(
+        market="A股",
+        symbol="688795",
+        name="摩尔线程-U",
+        history=pd.DataFrame(rows),
+        factor_evidence={
+            "financial_rows": pd.DataFrame(
+                [
+                    {
+                        "报告期": "2026-03-31",
+                        "披露日期": "2099-04-25",
+                        "营业总收入": "15.00亿",
+                        "净利润": "2.00亿",
+                        "每股经营现金流": "0.78",
+                        "销售毛利率": "48.2%",
+                        "净资产收益率": "16.1%",
+                        "资产负债率": "31.4%",
+                    }
+                ]
+            )
+        },
+    )
+
+    financial_timeline = next(item for item in brief.data_quality_checks if item.key == "financial_timeline")
+    assert financial_timeline.status == "fail"
+    assert financial_timeline.score <= 24
+    assert brief.signal_label == "数据待确认"
+    assert any(item.key == "trusted_data_layer" for item in brief.evidence_ledger)
 
 
 def test_build_quant_brief_cleans_dirty_history():

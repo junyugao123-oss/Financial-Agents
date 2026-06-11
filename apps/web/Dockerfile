@@ -6,6 +6,8 @@ RUN npm install
 
 FROM node:24-alpine AS builder
 WORKDIR /app
+ARG API_PROXY_TARGET=http://api:8000
+ENV API_PROXY_TARGET=$API_PROXY_TARGET
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY package.json ./

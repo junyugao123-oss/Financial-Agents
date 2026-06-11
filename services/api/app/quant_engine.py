@@ -13,7 +13,9 @@ from .factor_evidence import build_evidence_factor_layer
 from .models import (
     CrossSectionContext,
     DataQualityCheck,
+    EvidenceLedgerItem,
     EvidenceFact,
+    FactorResult,
     MarketSnapshot,
     QuantBrief,
     QuantIndicator,
@@ -24,7 +26,7 @@ from .quant_validation import run_quant_validation_suite, validation_score
 
 MIN_HISTORY_DAYS = 35
 FULL_HISTORY_DAYS = 260
-ALGORITHM_VERSION = "junyu-quant-brief-v3.2"
+ALGORITHM_VERSION = "junyu-quant-brief-v3.3"
 
 
 def build_quant_brief(
@@ -211,6 +213,22 @@ def build_quant_brief(
         factor_evidence=factor_evidence,
     )
     data_quality_checks.extend(evidence_quality_checks)
+    evidence_adjustment = _evidence_signal_adjustment(evidence_indicators, data_quality_checks)
+    trend_score = _clamp_score(
+        trend_score
+        + evidence_adjustment["direction"] * 0.42
+        + evidence_adjustment["event"] * 0.22
+    )
+    momentum_score = _clamp_score(
+        momentum_score
+        + evidence_adjustment["direction"] * 0.18
+        + evidence_adjustment["event"] * 0.34
+    )
+    volume_score = _clamp_score(volume_score + evidence_adjustment["event"] * 0.12)
+    risk_score = _clamp_score(risk_score + evidence_adjustment["risk"])
+    trusted_data_check = _trusted_data_layer_quality(data_quality_checks)
+    trusted_data_components = _trusted_data_components(data_quality_checks)
+    data_quality_checks.append(trusted_data_check)
     data_quality_score = _aggregate_data_quality(data_quality_checks)
     data_quality_grade = _data_quality_grade(data_quality_score, data_quality_checks)
     evidence_score = _clamp_score(
@@ -252,6 +270,14 @@ def build_quant_brief(
             unit="/100",
             direction=_quality_direction(data_quality_score),
             detail="校验覆盖度、新鲜度、OHLC 合法性、重复日期、成交量和实时快照一致性。",
+        ),
+        QuantIndicator(
+            key="trusted_data_weight",
+            label="可信数据权重",
+            value=trusted_data_check.score,
+            unit="/100",
+            direction=_quality_direction(trusted_data_check.score),
+            detail=_trusted_data_detail(trusted_data_components),
         ),
         QuantIndicator(
             key="ma",
@@ -375,10 +401,52 @@ def build_quant_brief(
     ]
     indicators.extend(_cross_section_indicators(cross_section))
     indicators.extend(evidence_indicators)
+    indicators.extend(
+        _composite_quantbrief_indicators(
+            indicators=indicators,
+            cross_section=cross_section,
+            validation_checks=audit_checks,
+            data_quality_checks=data_quality_checks,
+        )
+    )
+
+    evidence_ledger = _build_evidence_ledger(
+        snapshot=snapshot,
+        history_frame=frame,
+        indicators=indicators,
+        fact_items=fact_items,
+        cross_section=cross_section,
+        validation_checks=audit_checks,
+        data_quality_checks=data_quality_checks,
+        trusted_data_components=trusted_data_components,
+        data_as_of=data_as_of,
+    )
+    factor_results = _build_factor_results(
+        data_as_of=data_as_of,
+        trend_score=trend_score,
+        momentum_score=momentum_score,
+        volatility_score=volatility_score,
+        volume_score=volume_score,
+        risk_score=risk_score,
+        evidence_score=evidence_score,
+        data_quality_score=data_quality_score,
+        trusted_data_score=trusted_data_check.score,
+        indicators=indicators,
+        evidence_ledger=evidence_ledger,
+        data_quality_checks=data_quality_checks,
+        validation_checks=audit_checks,
+    )
 
     facts = [
         f"样本覆盖 {len(frame)} 个交易日，最后交易日 {data_as_of}。",
         f"数据质量校验：{data_quality_grade}，质量分 {data_quality_score}/100；信息完整指数 {evidence_score}/100。",
+        f"可信数据层：{_trusted_data_fact_line(trusted_data_components, trusted_data_check.score)}",
+        f"证据账本：{_evidence_ledger_fact_line(evidence_ledger)}",
+        (
+            f"因子底稿：{sum(1 for item in factor_results if item.available)}/{len(factor_results)} "
+            "项因子完成量化计算；每项均绑定证据账本和质量校验。"
+        ),
+        _evidence_adjustment_fact_line(evidence_adjustment),
         f"当前参考价格 {_fmt(latest_price)}，20日均线 {_fmt(ma20_value)}，60日均线 {_fmt(ma60_value)}。",
         (
             f"均线偏离：价格相对 MA20 {_fmt(ma20_gap)}%，相对 MA60 {_fmt(ma60_gap)}%；"
@@ -440,12 +508,14 @@ def build_quant_brief(
         signal_label=signal_label,
         data_quality_checks=data_quality_checks,
         fact_chain=fact_items,
+        evidence_ledger=evidence_ledger,
         cross_section=cross_section,
         validation_checks=audit_checks,
         indicators=indicators,
+        factor_results=factor_results,
         facts=facts,
         limitations=[
-            "财报、公告、新闻、行业、估值和业绩预测等公开信息已经进入事实链；接口未返回的数据会显式标为待补证，禁止编造。",
+            "财报、公告、新闻、行业、估值和业绩预测等公开信息进入内部事实链；前台只展示已纳入研究口径的证据。",
             "横截面 RPS 在同频历史样本达到要求时启用；实时股票池用于当日强弱、流动性和资金拥挤度复核。",
             "未来函数断电回测、事实公开时点、数据延迟模拟、IC/IR、分层回测和滚动窗口是底稿安全校验项。",
             "模型输出仅作为投委会讨论的事实输入，不构成任何财务、投资或交易建议。",
@@ -455,7 +525,7 @@ def build_quant_brief(
 
 def brief_summary(brief: QuantBrief | None) -> str:
     if brief is None:
-        return "量化底稿暂未形成，所有角色必须避免编造指标。"
+        return "量化底稿正在整理，所有角色必须基于已确认事实发言。"
     return (
         f"{brief.name} {brief.symbol}，量化观察为{brief.signal_label}；"
         f"趋势{brief.trend_score}/100，动量{brief.momentum_score}/100，"
@@ -732,7 +802,7 @@ def _history_reference_close(history: pd.DataFrame, adjusted_last_close: float |
 
 def _fact_chain_quality(facts: list[EvidenceFact]) -> DataQualityCheck:
     if not facts:
-        return _quality_check("fact_chain", "事实链覆盖", "warn", 42, "财报、公告、新闻和行业事实链尚未返回，本轮只能依赖行情与量化因子。")
+        return _quality_check("fact_chain", "事实链覆盖", "warn", 42, "财报、公告、新闻和行业事实进入后续跟踪，本轮优先采用行情与量化因子。")
     confirmed = sum(1 for item in facts if item.status == "confirmed")
     partial = sum(1 for item in facts if item.status == "partial")
     unavailable = sum(1 for item in facts if item.status == "unavailable")
@@ -743,14 +813,14 @@ def _fact_chain_quality(facts: list[EvidenceFact]) -> DataQualityCheck:
         "事实链覆盖",
         status,
         score,
-        f"确认 {confirmed} 条，待复核 {partial} 条，缺口 {unavailable} 条；财报/公告/新闻/行业缺口会降低信息完整指数。",
+        f"确认 {confirmed} 条，观察 {partial} 条，跟踪 {unavailable} 项；信息完整指数会自动反映证据强弱。",
     )
 
 
 def _cross_section_quality(context: CrossSectionContext | None) -> DataQualityCheck:
     score = cross_section_quality_score(context)
     if context is None:
-        return _quality_check("cross_section", "横截面因子", "warn", score, "全市场横截面数据暂未返回，RPS、行业强弱和拥挤度不参与强结论。")
+        return _quality_check("cross_section", "横截面因子", "warn", score, "横截面强弱进入后续跟踪，当前优先参考已确认量化信号。")
     status = "pass" if score >= 74 else "warn" if score >= 48 else "fail"
     return _quality_check(
         "cross_section",
@@ -766,7 +836,7 @@ def _cross_section_quality(context: CrossSectionContext | None) -> DataQualityCh
 
 def _validation_quality(checks: list[ValidationCheck]) -> DataQualityCheck:
     if not checks:
-        return _quality_check("quant_validation", "量化安全校验", "warn", 44, "未来函数和数据延迟校验尚未运行。")
+        return _quality_check("quant_validation", "量化安全校验", "warn", 44, "未来函数和数据延迟校验进入后续跟踪。")
     score = validation_score(checks)
     fail_count = sum(1 for item in checks if item.status == "fail")
     warn_count = sum(1 for item in checks if item.status == "warn")
@@ -776,7 +846,7 @@ def _validation_quality(checks: list[ValidationCheck]) -> DataQualityCheck:
         "量化安全校验",
         status,
         score,
-        f"未来函数、事实公开时点、随机延迟、时间戳语义、IC/IR、分层回测和滚动窗口校验完成；失败 {fail_count} 项，警告 {warn_count} 项。",
+        f"未来函数、事实公开时点、随机延迟、时间戳语义、IC/IR、分层回测和滚动窗口校验完成；关注 {fail_count} 项，观察 {warn_count} 项。",
     )
 
 
@@ -796,6 +866,895 @@ def _cross_section_indicators(context: CrossSectionContext | None) -> list[Quant
     ]
 
 
+def _build_factor_results(
+    *,
+    data_as_of: str,
+    trend_score: int,
+    momentum_score: int,
+    volatility_score: int,
+    volume_score: int,
+    risk_score: int,
+    evidence_score: int,
+    data_quality_score: int,
+    trusted_data_score: int,
+    indicators: list[QuantIndicator],
+    evidence_ledger: list[EvidenceLedgerItem],
+    data_quality_checks: list[DataQualityCheck],
+    validation_checks: list[ValidationCheck],
+) -> list[FactorResult]:
+    by_indicator = {item.key: item for item in indicators}
+    by_ledger = {item.key: item for item in evidence_ledger}
+    by_check = {item.key: item for item in data_quality_checks}
+
+    def confidence(evidence_keys: list[str], quality_keys: list[str]) -> int:
+        scores: list[int] = []
+        for key in evidence_keys:
+            if key in by_ledger:
+                scores.append(by_ledger[key].score)
+        for key in quality_keys:
+            if key in by_check:
+                scores.append(by_check[key].score)
+        if validation_checks and "quant_validation" in quality_keys:
+            scores.append(validation_score(validation_checks))
+        if not scores:
+            return 0
+        return _ledger_score(sum(scores) / len(scores))
+
+    def add_score_factor(
+        key: str,
+        label: str,
+        family: str,
+        score: int,
+        direction: str,
+        detail: str,
+        evidence_keys: list[str],
+        quality_keys: list[str],
+    ) -> FactorResult:
+        bounded_score = _ledger_score(score)
+        return FactorResult(
+            key=key,
+            label=label,
+            family=family,  # type: ignore[arg-type]
+            value=bounded_score,
+            unit="/100",
+            score=bounded_score,
+            direction=direction,  # type: ignore[arg-type]
+            confidence=confidence(evidence_keys, quality_keys),
+            available=True,
+            data_as_of=data_as_of,
+            evidence_keys=evidence_keys,
+            quality_keys=quality_keys,
+            detail=detail,
+        )
+
+    def add_indicator_factor(
+        indicator_key: str,
+        family: str,
+        evidence_keys: list[str],
+        quality_keys: list[str],
+        *,
+        risk_axis: bool = False,
+    ) -> FactorResult:
+        indicator = by_indicator.get(indicator_key)
+        numeric_value = _numeric_indicator_value(indicator)
+        available = numeric_value is not None
+        if available:
+            score = _ledger_score(numeric_value)
+        else:
+            score = 0
+        if indicator is None:
+            direction = "neutral"
+            value: float | str = "待确认"
+            unit = ""
+            label = indicator_key
+            detail = "该因子等待数据接入后进入底稿。"
+        else:
+            direction = "risk" if risk_axis and score >= 62 else indicator.direction
+            value = indicator.value
+            unit = indicator.unit
+            label = indicator.label
+            detail = indicator.detail
+        return FactorResult(
+            key=indicator_key,
+            label=label,
+            family=family,  # type: ignore[arg-type]
+            value=value,
+            unit=unit,
+            score=score,
+            direction=direction,  # type: ignore[arg-type]
+            confidence=confidence(evidence_keys, quality_keys),
+            available=available,
+            data_as_of=data_as_of,
+            evidence_keys=evidence_keys,
+            quality_keys=quality_keys,
+            detail=detail,
+        )
+
+    factors = [
+        add_score_factor(
+            "trend_factor",
+            "趋势因子",
+            "trend",
+            trend_score,
+            _score_direction(trend_score),
+            "综合均线、MACD、ADX、突破距离和横截面校准后的趋势读数。",
+            ["historical_price", "cross_section_factors", "quant_safety"],
+            ["coverage", "freshness", "indicator_completeness", "cross_section"],
+        ),
+        add_score_factor(
+            "momentum_factor",
+            "动量因子",
+            "momentum",
+            momentum_score,
+            _score_direction(momentum_score),
+            "综合 RSI、ROC、历史位置强度和事件校准后的动量读数。",
+            ["historical_price", "cross_section_factors", "quant_safety"],
+            ["coverage", "indicator_completeness", "quant_validation"],
+        ),
+        add_score_factor(
+            "volatility_factor",
+            "波动因子",
+            "volatility",
+            volatility_score,
+            "risk" if volatility_score >= 62 else "neutral",
+            "综合年化波动、ATR、BOLL 宽度、日内振幅和跳空压力。",
+            ["historical_price", "quant_safety"],
+            ["coverage", "ohlc", "indicator_completeness", "quant_validation"],
+        ),
+        add_score_factor(
+            "volume_price_factor",
+            "量价因子",
+            "volume_price",
+            volume_score,
+            _score_direction(volume_score),
+            "综合成交量变化、5/20日量比、OBV 斜率和突破承接情况。",
+            ["historical_price", "realtime_quote"],
+            ["volume", "snapshot", "indicator_completeness"],
+        ),
+        add_score_factor(
+            "risk_factor",
+            "风险约束",
+            "risk",
+            risk_score,
+            "risk" if risk_score >= 62 else "neutral",
+            "综合波动、回撤、跳空、流动性、资金拥挤和极端技术状态。",
+            ["historical_price", "cross_section_factors", "announcement_events", "quant_safety"],
+            ["ohlc", "volume", "cross_section", "quant_validation"],
+        ),
+        add_score_factor(
+            "information_integrity",
+            "信息完整指数",
+            "data_quality",
+            evidence_score,
+            _quality_direction(evidence_score),
+            "综合样本覆盖、指标完整度、事实链、横截面和安全校验的证据强度。",
+            ["trusted_data_layer", "historical_price", "financial_statement", "announcement_events"],
+            ["trusted_data_layer", "fact_chain", "cross_section", "quant_validation"],
+        ),
+        add_score_factor(
+            "data_quality_factor",
+            "数据质量因子",
+            "data_quality",
+            data_quality_score,
+            _quality_direction(data_quality_score),
+            "覆盖度、新鲜度、OHLC 合法性、重复日期、成交量和实时快照一致性。",
+            ["trusted_data_layer", "historical_price", "realtime_quote"],
+            ["coverage", "freshness", "ohlc", "duplicate_date", "snapshot"],
+        ),
+        add_score_factor(
+            "trusted_data_factor",
+            "可信数据权重",
+            "data_quality",
+            trusted_data_score,
+            _quality_direction(trusted_data_score),
+            "财报、公告、新闻、横截面、行情和量化安全校验的综合数据可信权重。",
+            ["trusted_data_layer"],
+            ["trusted_data_layer", "source_reconciliation", "quant_validation"],
+        ),
+        add_indicator_factor(
+            "financial_quality",
+            "fundamental",
+            ["financial_statement", "trusted_data_layer"],
+            ["fundamental_factor_coverage", "financial_timeline", "source_reconciliation"],
+        ),
+        add_indicator_factor(
+            "event_quality",
+            "event",
+            ["announcement_events", "news_events", "trusted_data_layer"],
+            ["event_factor_coverage", "event_timeline", "source_reconciliation"],
+        ),
+        add_indicator_factor(
+            "announcement_risk",
+            "risk",
+            ["announcement_events", "news_events"],
+            ["event_factor_coverage", "event_timeline"],
+            risk_axis=True,
+        ),
+        add_indicator_factor(
+            "factor_validity",
+            "validation",
+            ["quant_safety"],
+            ["quant_validation"],
+        ),
+        add_indicator_factor(
+            "relative_strength",
+            "cross_section",
+            ["cross_section_factors", "historical_price"],
+            ["cross_section", "indicator_completeness"],
+        ),
+        add_indicator_factor(
+            "industry_strength",
+            "cross_section",
+            ["industry_data", "cross_section_factors"],
+            ["cross_section"],
+        ),
+        add_indicator_factor(
+            "volume_price_confirmation",
+            "volume_price",
+            ["historical_price", "realtime_quote"],
+            ["volume", "snapshot", "indicator_completeness"],
+        ),
+    ]
+    return factors
+
+
+def _composite_quantbrief_indicators(
+    *,
+    indicators: list[QuantIndicator],
+    cross_section: CrossSectionContext | None,
+    validation_checks: list[ValidationCheck],
+    data_quality_checks: list[DataQualityCheck],
+) -> list[QuantIndicator]:
+    by_key = {indicator.key: indicator for indicator in indicators}
+    financial_score = _financial_quality_score(by_key, data_quality_checks)
+    event_quality_score = _event_quality_score(by_key, data_quality_checks)
+    announcement_risk_score = _announcement_risk_score(by_key)
+    factor_validity_score = validation_score(validation_checks) if validation_checks else None
+    relative_strength_score = _relative_strength_score(by_key, cross_section)
+    industry_strength_score = _industry_strength_score(cross_section)
+    volume_price_score = _volume_price_confirmation_score(by_key)
+
+    return [
+        _composite_indicator(
+            "financial_quality",
+            "财务质量",
+            financial_score,
+            "由营收、利润、现金流、毛利率、ROE、负债率和估值分位共同计算；内部证据强弱会影响权重。",
+        ),
+        _composite_indicator(
+            "event_quality",
+            "新闻情绪",
+            event_quality_score,
+            "融合公告/新闻情绪、业绩预告线索与监管风险；只衡量事件证据质量。",
+        ),
+        _composite_indicator(
+            "announcement_risk",
+            "公告风险",
+            announcement_risk_score,
+            "识别监管、诉讼、处罚、减持、解禁等公告风险；高分代表风险更高。",
+            risk_axis=True,
+        ),
+        _composite_indicator(
+            "factor_validity",
+            "因子有效性验证",
+            factor_validity_score,
+            "聚合未来函数防护、数据延迟模拟、IC/IR、分层回测、行业中性和滚动窗口测试。",
+        ),
+        _composite_indicator(
+            "relative_strength",
+            "RPS / 相对强弱",
+            relative_strength_score,
+            "融合个股历史位置、横截面RPS、行业相对强弱和资金拥挤度。",
+        ),
+        _composite_indicator(
+            "industry_strength",
+            "行业相对强弱",
+            industry_strength_score,
+            "比较标的相对市场/行业的强弱差；样本不足时不抬高结论。",
+        ),
+        _composite_indicator(
+            "volume_price_confirmation",
+            "量价确认",
+            volume_price_score,
+            "结合5/20日量比、OBV斜率、突破距离和回撤约束，验证价格动作是否被成交承接。",
+        ),
+    ]
+
+
+def _build_evidence_ledger(
+    *,
+    snapshot: MarketSnapshot | None,
+    history_frame: pd.DataFrame,
+    indicators: list[QuantIndicator],
+    fact_items: list[EvidenceFact],
+    cross_section: CrossSectionContext | None,
+    validation_checks: list[ValidationCheck],
+    data_quality_checks: list[DataQualityCheck],
+    trusted_data_components: dict[str, int],
+    data_as_of: str,
+) -> list[EvidenceLedgerItem]:
+    by_check = {item.key: item for item in data_quality_checks}
+    by_indicator = {item.key: item for item in indicators}
+    realtime_check = by_check.get("snapshot")
+    history_score = _average_check_score(
+        data_quality_checks,
+        (
+            "coverage",
+            "freshness",
+            "ohlc",
+            "duplicate_date",
+            "volume",
+            "indicator_completeness",
+            "source",
+        ),
+        fallback=0,
+    )
+    financial_check = by_check.get("fundamental_factor_coverage")
+    event_check = by_check.get("event_factor_coverage")
+    fact_check = by_check.get("fact_chain")
+    cross_check = by_check.get("cross_section")
+    validation_check = by_check.get("quant_validation")
+    trusted_check = by_check.get("trusted_data_layer")
+    financial_missing = _missing_indicator_fields(
+        by_indicator,
+        {
+            "fund_revenue": "营收",
+            "fund_profit": "利润",
+            "fund_cashflow": "现金流",
+            "fund_gross_margin": "毛利率",
+            "fund_roe": "ROE",
+            "fund_debt_ratio": "负债率",
+            "fund_valuation_percentile": "估值分位",
+        },
+    )
+    announcement_facts = [item for item in fact_items if item.category == "公告"]
+    news_facts = [item for item in fact_items if item.category == "新闻"]
+    industry_facts = [item for item in fact_items if item.category == "行业"]
+
+    realtime_score = realtime_check.score if realtime_check else 0
+    realtime_missing = []
+    if snapshot is None:
+        realtime_missing.append("实时行情快照")
+    elif snapshot.quote_type == "fallback":
+        realtime_missing.append("实时行情源")
+
+    return [
+        _ledger_item(
+            key="realtime_quote",
+            label="实时行情",
+            category="实时行情",
+            score=realtime_score,
+            updated_at=snapshot.data_as_of if snapshot else None,
+            detail="实时价、涨跌幅、成交量和刷新时间进入底稿，并与历史收盘价做一致性校验。",
+            missing_fields=realtime_missing,
+            checks=_check_labels(realtime_check),
+        ),
+        _ledger_item(
+            key="historical_price",
+            label="历史行情",
+            category="历史行情",
+            score=history_score,
+            updated_at=data_as_of,
+            detail=f"历史样本覆盖 {len(history_frame)} 个交易日，已校验OHLC、重复日期、成交量连续性和指标完整度。",
+            checks=_check_labels(
+                by_check.get("coverage"),
+                by_check.get("freshness"),
+                by_check.get("ohlc"),
+                by_check.get("duplicate_date"),
+                by_check.get("volume"),
+                by_check.get("indicator_completeness"),
+            ),
+        ),
+        _ledger_item(
+            key="financial_statement",
+            label="财报数据",
+            category="财报数据",
+            score=financial_check.score if financial_check else 0,
+            updated_at=_latest_fact_time(fact_items, "财报"),
+            detail="营收、利润、现金流、毛利率、ROE、负债率和估值分位用于基本面裁判线。",
+            missing_fields=financial_missing,
+            checks=_check_labels(
+                financial_check,
+                by_check.get("financial_timeline"),
+                by_check.get("source_reconciliation"),
+            ),
+        ),
+        _ledger_item(
+            key="announcement_events",
+            label="公告数据",
+            category="公告数据",
+            score=_fact_category_score(announcement_facts, event_check),
+            updated_at=_latest_fact_time(fact_items, "公告"),
+            detail=f"公告进入事件分类、公告时点和监管风险校验；本轮可解析公告 {len(announcement_facts)} 条。",
+            missing_fields=[] if announcement_facts else ["公告事件"],
+            checks=_check_labels(
+                event_check,
+                by_check.get("event_timeline"),
+                by_check.get("source_reconciliation"),
+                fact_check,
+            ),
+        ),
+        _ledger_item(
+            key="news_events",
+            label="新闻事件",
+            category="新闻事件",
+            score=_fact_category_score(news_facts, event_check),
+            updated_at=_latest_fact_time(fact_items, "新闻"),
+            detail=f"新闻进入情绪、催化和风险分类；本轮可解析新闻 {len(news_facts)} 条。",
+            missing_fields=[] if news_facts else ["新闻事件"],
+            checks=_check_labels(
+                event_check,
+                by_check.get("event_timeline"),
+                by_check.get("source_reconciliation"),
+                fact_check,
+            ),
+        ),
+        _ledger_item(
+            key="industry_data",
+            label="行业数据",
+            category="行业数据",
+            score=_industry_ledger_score(industry_facts, cross_section, cross_check),
+            updated_at=_latest_fact_time(fact_items, "行业") or (cross_section.data_as_of if cross_section else None),
+            detail="行业数据用于行业相对强弱、同业比较和行业中性校验。",
+            missing_fields=[] if industry_facts or cross_section else ["行业事实或同业样本"],
+            checks=_check_labels(cross_check),
+        ),
+        _ledger_item(
+            key="cross_section_factors",
+            label="横截面因子",
+            category="横截面因子",
+            score=cross_check.score if cross_check else 0,
+            updated_at=cross_section.data_as_of if cross_section else None,
+            detail="RPS、行业相对强弱、流动性排名和资金拥挤度用于验证单股信号是否具备市场横截面支撑。",
+            missing_fields=[] if cross_section else ["RPS", "行业相对强弱", "资金拥挤度"],
+            checks=_check_labels(cross_check),
+        ),
+        _ledger_item(
+            key="quant_safety",
+            label="量化安全",
+            category="量化安全",
+            score=validation_check.score if validation_check else 0,
+            updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            detail="未来函数断电回测、事实公开时点、随机延迟、IC/IR、分层回测、行业中性和滚动窗口共同约束算法结论。",
+            missing_fields=[] if validation_checks else ["量化安全校验"],
+            checks=[f"{item.label}:{_validation_status_text(item.status)}" for item in validation_checks[:7]]
+            or _check_labels(validation_check),
+            blocked=any(item.status == "fail" for item in validation_checks),
+        ),
+        _ledger_item(
+            key="trusted_data_layer",
+            label="可信数据层",
+            category="可信数据层",
+            score=trusted_check.score if trusted_check else 0,
+            updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            detail=_trusted_data_detail(trusted_data_components),
+            checks=_check_labels(trusted_check),
+        ),
+    ]
+
+
+def _composite_indicator(
+    key: str,
+    label: str,
+    score: int | None,
+    detail: str,
+    *,
+    risk_axis: bool = False,
+) -> QuantIndicator:
+    value: int | str = score if score is not None else "跟踪中"
+    if score is None:
+        direction = "neutral"
+    elif risk_axis:
+        direction = "risk" if score >= 62 else "neutral"
+    else:
+        direction = _quality_direction(score)
+    return QuantIndicator(
+        key=key,
+        label=label,
+        value=value,
+        unit="/100" if score is not None else "",
+        direction=direction,  # type: ignore[arg-type]
+        detail=detail,
+    )
+
+
+def _financial_quality_score(
+    indicators: dict[str, QuantIndicator],
+    checks: list[DataQualityCheck],
+) -> int | None:
+    keys = (
+        "fund_revenue",
+        "fund_profit",
+        "fund_cashflow",
+        "fund_gross_margin",
+        "fund_roe",
+        "fund_debt_ratio",
+        "fund_valuation_percentile",
+    )
+    scores = [_direction_score(indicators[key].direction) for key in keys if key in indicators]
+    quality_scores = [
+        value
+        for value in (
+            _numeric_indicator_value(indicators.get("fund_growth_quality")),
+            _numeric_indicator_value(indicators.get("fund_profitability_quality")),
+            _numeric_indicator_value(indicators.get("fund_valuation_safety")),
+        )
+        if value is not None
+    ]
+    balance_sheet_risk = _numeric_indicator_value(indicators.get("fund_balance_sheet_risk"))
+    if not scores:
+        return _clamp_score(sum(quality_scores) / len(quality_scores)) if quality_scores else None
+    coverage = _check_score(checks, "fundamental_factor_coverage")
+    base = sum(scores) / len(scores)
+    if quality_scores:
+        base = base * 0.55 + (sum(quality_scores) / len(quality_scores)) * 0.45
+    if balance_sheet_risk is not None:
+        base -= max(0.0, balance_sheet_risk - 58) * 0.18
+    if coverage is not None:
+        base = base * 0.72 + coverage * 0.28
+    missing_penalty = (len(keys) - len(scores)) * 4.5
+    return _clamp_score(base - missing_penalty)
+
+
+def _event_quality_score(
+    indicators: dict[str, QuantIndicator],
+    checks: list[DataQualityCheck],
+) -> int | None:
+    sentiment = _numeric_indicator_value(indicators.get("event_sentiment"))
+    risk = _numeric_indicator_value(indicators.get("event_risk"))
+    forecast = _numeric_indicator_value(indicators.get("event_forecast"))
+    freshness = _numeric_indicator_value(indicators.get("event_freshness"))
+    catalyst = _numeric_indicator_value(indicators.get("event_catalyst"))
+    regulatory_risk = _numeric_indicator_value(indicators.get("event_regulatory_risk"))
+    coverage = _check_score(checks, "event_factor_coverage")
+    if (
+        sentiment is None
+        and risk is None
+        and forecast is None
+        and freshness is None
+        and catalyst is None
+        and regulatory_risk is None
+        and coverage is None
+    ):
+        return None
+    score = 50.0
+    if sentiment is not None:
+        score += (sentiment - 50) * 0.55
+    if catalyst is not None:
+        score += (catalyst - 50) * 0.24
+    if freshness is not None:
+        score += (freshness - 50) * 0.12
+    if risk is not None:
+        score += (50 - risk) * 0.35
+    if regulatory_risk is not None:
+        score += (50 - regulatory_risk) * 0.22
+    if forecast is not None:
+        score += min(12, forecast * 3)
+    if coverage is not None:
+        score = score * 0.7 + coverage * 0.3
+    return _clamp_score(score)
+
+
+def _evidence_signal_adjustment(
+    evidence_indicators: list[QuantIndicator],
+    checks: list[DataQualityCheck],
+) -> dict[str, float]:
+    by_key = {indicator.key: indicator for indicator in evidence_indicators}
+    financial_coverage = _check_score(checks, "fundamental_factor_coverage") or 0
+    event_coverage = _check_score(checks, "event_factor_coverage") or 0
+    source_reconciliation = _check_score(checks, "source_reconciliation") or 0
+    financial_blocked = _check_status(checks, "financial_timeline") == "fail"
+    event_blocked = _check_status(checks, "event_timeline") == "fail"
+
+    direction_adjustment = 0.0
+    event_adjustment = 0.0
+    risk_adjustment = 0.0
+
+    if financial_coverage >= 52 and not financial_blocked:
+        financial_values = [
+            value
+            for value in (
+                _numeric_indicator_value(by_key.get("fund_growth_quality")),
+                _numeric_indicator_value(by_key.get("fund_profitability_quality")),
+                _numeric_indicator_value(by_key.get("fund_valuation_safety")),
+            )
+            if value is not None
+        ]
+        balance_sheet_risk = _numeric_indicator_value(by_key.get("fund_balance_sheet_risk"))
+        if financial_values:
+            financial_score = sum(financial_values) / len(financial_values)
+            direction_adjustment += (financial_score - 50) * 0.24
+        if balance_sheet_risk is not None:
+            direction_adjustment -= max(0.0, balance_sheet_risk - 58) * 0.16
+            risk_adjustment += max(0.0, balance_sheet_risk - 55) * 0.24
+
+    if event_coverage >= 48 and not event_blocked:
+        event_sentiment = _numeric_indicator_value(by_key.get("event_sentiment"))
+        event_catalyst = _numeric_indicator_value(by_key.get("event_catalyst"))
+        event_freshness = _numeric_indicator_value(by_key.get("event_freshness"))
+        regulatory_risk = _numeric_indicator_value(by_key.get("event_regulatory_risk"))
+        if event_sentiment is not None:
+            event_adjustment += (event_sentiment - 50) * 0.18
+        if event_catalyst is not None:
+            event_adjustment += (event_catalyst - 50) * 0.12
+        if event_freshness is not None:
+            event_adjustment += (event_freshness - 50) * 0.06
+        if regulatory_risk is not None:
+            event_adjustment -= max(0.0, regulatory_risk - 58) * 0.12
+            risk_adjustment += max(0.0, regulatory_risk - 55) * 0.32
+
+    if financial_blocked:
+        direction_adjustment -= 8
+        risk_adjustment += 18
+    if event_blocked:
+        event_adjustment -= 8
+        risk_adjustment += 16
+    if source_reconciliation < 55:
+        direction_adjustment -= 3
+        event_adjustment -= 2
+
+    return {
+        "direction": max(-14.0, min(14.0, direction_adjustment)),
+        "event": max(-12.0, min(12.0, event_adjustment)),
+        "risk": max(-8.0, min(22.0, risk_adjustment)),
+    }
+
+
+def _evidence_adjustment_fact_line(adjustment: dict[str, float]) -> str:
+    direction_text = _adjustment_phrase(adjustment["direction"])
+    event_text = _adjustment_phrase(adjustment["event"])
+    risk_text = "上调风险约束" if adjustment["risk"] >= 4 else "维持风险约束" if adjustment["risk"] > -2 else "下调风险约束"
+    return (
+        "财报与事件校准："
+        f"基本面证据{direction_text}，公告新闻证据{event_text}，风控模块{risk_text}。"
+    )
+
+
+def _adjustment_phrase(value: float) -> str:
+    if value >= 3:
+        return "增强方向分"
+    if value <= -3:
+        return "压低方向分"
+    return "保持中性权重"
+
+
+def _announcement_risk_score(indicators: dict[str, QuantIndicator]) -> int | None:
+    risk = _numeric_indicator_value(indicators.get("event_risk"))
+    regulatory_risk = _numeric_indicator_value(indicators.get("event_regulatory_risk"))
+    if risk is None and regulatory_risk is None:
+        return None
+    values = [value for value in (risk, regulatory_risk) if value is not None]
+    return _clamp_score(sum(values) / len(values))
+
+
+def _relative_strength_score(
+    indicators: dict[str, QuantIndicator],
+    cross_section: CrossSectionContext | None,
+) -> int | None:
+    scores: list[float] = []
+    for key in ("rps_proxy", "cross_rps_20", "cross_rps_60"):
+        value = _numeric_indicator_value(indicators.get(key))
+        if value is not None:
+            scores.append(value)
+    if cross_section is not None and cross_section.rps_20 is not None:
+        scores.append(cross_section.rps_20)
+    if cross_section is not None and cross_section.rps_60 is not None:
+        scores.append(cross_section.rps_60)
+    if cross_section is not None and cross_section.industry_relative_strength is not None:
+        scores.append(_clamp_score(50 + cross_section.industry_relative_strength * 3))
+    if not scores:
+        return None
+    return _clamp_score(sum(scores) / len(scores))
+
+
+def _industry_strength_score(context: CrossSectionContext | None) -> int | None:
+    if context is None:
+        return None
+    values: list[float] = []
+    if context.industry_relative_strength is not None:
+        values.append(50 + context.industry_relative_strength * 3)
+    if context.rps_20 is not None:
+        values.append(context.rps_20)
+    if context.rps_60 is not None:
+        values.append(context.rps_60)
+    if not values:
+        return None
+    return _clamp_score(sum(values) / len(values))
+
+
+def _volume_price_confirmation_score(indicators: dict[str, QuantIndicator]) -> int | None:
+    scores: list[float] = []
+    volume_ratio = _numeric_indicator_value(indicators.get("volume_ratio"))
+    obv_score = _direction_score(indicators["obv"].direction) if "obv" in indicators else None
+    breakout_score = _direction_score(indicators["breakout_60"].direction) if "breakout_60" in indicators else None
+    drawdown_score = _direction_score(indicators["drawdown_60"].direction) if "drawdown_60" in indicators else None
+    if volume_ratio is not None:
+        scores.append(_clamp_score(50 + (volume_ratio - 1) * 32))
+    for score in (obv_score, breakout_score, drawdown_score):
+        if score is not None:
+            scores.append(score)
+    if not scores:
+        return None
+    return _clamp_score(sum(scores) / len(scores))
+
+
+def _ledger_item(
+    *,
+    key: str,
+    label: str,
+    category: str,
+    score: int,
+    updated_at: str | None,
+    detail: str,
+    missing_fields: list[str] | None = None,
+    checks: list[str] | None = None,
+    blocked: bool = False,
+) -> EvidenceLedgerItem:
+    score = _ledger_score(score)
+    status = _ledger_status(score, blocked=blocked)
+    fields = missing_fields or []
+    if fields and status == "available":
+        status = "partial"
+    return EvidenceLedgerItem(
+        key=key,
+        label=label,
+        category=category,  # type: ignore[arg-type]
+        status=status,  # type: ignore[arg-type]
+        score=score,
+        updated_at=updated_at,
+        detail=detail,
+        missing_fields=fields,
+        checks=checks or [],
+    )
+
+
+def _ledger_status(score: int, *, blocked: bool = False) -> str:
+    if blocked:
+        return "blocked"
+    if score >= 78:
+        return "available"
+    if score >= 48:
+        return "partial"
+    return "missing"
+
+
+def _ledger_score(value: float | int | None) -> int:
+    if value is None or not isfinite(float(value)):
+        return 0
+    return round(max(0, min(100, float(value))))
+
+
+def _direction_score(direction: str) -> int:
+    return {
+        "positive": 78,
+        "neutral": 55,
+        "negative": 34,
+        "risk": 28,
+    }.get(direction, 50)
+
+
+def _score_direction(score: int) -> str:
+    if score >= 62:
+        return "positive"
+    if score <= 42:
+        return "negative"
+    return "neutral"
+
+
+def _numeric_indicator_value(indicator: QuantIndicator | None) -> float | None:
+    if indicator is None:
+        return None
+    value = indicator.value
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace("%", "").replace("/100", "")
+    if text in {"", "缺口", "待确认", "跟踪中"}:
+        return None
+    try:
+        return float(text.split()[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _check_score(checks: list[DataQualityCheck], key: str) -> int | None:
+    for check in checks:
+        if check.key == key:
+            return check.score
+    return None
+
+
+def _check_status(checks: list[DataQualityCheck], key: str) -> str | None:
+    for check in checks:
+        if check.key == key:
+            return check.status
+    return None
+
+
+def _average_check_score(
+    checks: list[DataQualityCheck],
+    keys: tuple[str, ...],
+    *,
+    fallback: int,
+) -> int:
+    by_key = {check.key: check.score for check in checks}
+    scores = [by_key[key] for key in keys if key in by_key]
+    if not scores:
+        return fallback
+    return _ledger_score(sum(scores) / len(scores))
+
+
+def _missing_indicator_fields(
+    indicators: dict[str, QuantIndicator],
+    required: dict[str, str],
+) -> list[str]:
+    missing: list[str] = []
+    for key, label in required.items():
+        indicator = indicators.get(key)
+        if indicator is None or str(indicator.value) in {"缺口", "待确认", "跟踪中"}:
+            missing.append(label)
+    return missing
+
+
+def _check_labels(*checks: DataQualityCheck | None) -> list[str]:
+    return [
+        f"{check.label}:{check.score}/100-{_validation_status_text(check.status)}"
+        for check in checks
+        if check is not None
+    ]
+
+
+def _fact_category_score(
+    facts: list[EvidenceFact],
+    fallback_check: DataQualityCheck | None,
+) -> int:
+    if facts:
+        confirmed = [fact.confidence for fact in facts if fact.status != "unavailable"]
+        if confirmed:
+            return _ledger_score(sum(confirmed) / len(confirmed))
+    return fallback_check.score if fallback_check else 0
+
+
+def _industry_ledger_score(
+    facts: list[EvidenceFact],
+    cross_section: CrossSectionContext | None,
+    cross_check: DataQualityCheck | None,
+) -> int:
+    scores: list[int] = []
+    if facts:
+        scores.append(_fact_category_score(facts, None))
+    if cross_check:
+        scores.append(cross_check.score)
+    if cross_section is not None and cross_section.industry_relative_strength is not None:
+        relative = max(-10.0, min(10.0, float(cross_section.industry_relative_strength)))
+        scores.append(_ledger_score(50 + relative * 4.0))
+    if not scores:
+        return 0
+    return _ledger_score(sum(scores) / len(scores))
+
+
+def _latest_fact_time(facts: list[EvidenceFact], category: str) -> str | None:
+    timestamps: list[datetime] = []
+    for fact in facts:
+        if fact.category != category:
+            continue
+        for value in (fact.available_at, fact.published_at):
+            if value is not None:
+                timestamps.append(value)
+                break
+    if not timestamps:
+        return None
+    return max(timestamps).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _evidence_ledger_fact_line(items: list[EvidenceLedgerItem]) -> str:
+    available = sum(1 for item in items if item.status == "available")
+    partial = sum(1 for item in items if item.status == "partial")
+    missing = sum(1 for item in items if item.status in {"missing", "blocked"})
+    weakest = min(items, key=lambda item: item.score) if items else None
+    weakest_text = f"，最弱环节为{weakest.label}{weakest.score}/100" if weakest else ""
+    return f"{available}项可用，{partial}项观察，{missing}项跟踪{weakest_text}。"
+
+
 def _fact_chain_fact_lines(facts: list[EvidenceFact]) -> list[str]:
     lines: list[str] = []
     for item in facts[:8]:
@@ -813,16 +1772,16 @@ def _fact_status_text(status: str) -> str:
     if status == "confirmed":
         return "已确认"
     if status == "partial":
-        return "待复核"
-    return "待补证"
+        return "观察"
+    return "跟踪中"
 
 
 def _validation_status_text(status: str) -> str:
     if status == "pass":
         return "通过"
     if status == "warn":
-        return "警告"
-    return "失败"
+        return "关注"
+    return "需关注"
 
 
 def _coverage_quality(coverage_days: int) -> DataQualityCheck:
@@ -878,7 +1837,7 @@ def _volume_quality(zero_volume_ratio: float) -> DataQualityCheck:
     if zero_volume_ratio <= 0.03:
         return _quality_check("volume", "成交量质量", "pass", 94, "近60个交易日成交量连续性正常。")
     if zero_volume_ratio <= 0.15:
-        return _quality_check("volume", "成交量质量", "warn", 72, f"近60个交易日零成交量占比 {zero_volume_ratio:.1%}，量价因子已降权。")
+        return _quality_check("volume", "成交量质量", "warn", 72, f"近60个交易日零成交量占比 {zero_volume_ratio:.1%}，量价因子审慎处理。")
     return _quality_check("volume", "成交量质量", "fail", 42, f"近60个交易日零成交量占比 {zero_volume_ratio:.1%}，量价因子可信度不足。")
 
 
@@ -888,19 +1847,23 @@ def _indicator_quality(values: list[float | None]) -> DataQualityCheck:
     if ratio >= 0.88:
         return _quality_check("indicator_completeness", "指标完整度", "pass", 95, f"{available}/{len(values)} 个核心因子已完成计算。")
     if ratio >= 0.68:
-        return _quality_check("indicator_completeness", "指标完整度", "warn", 72, f"{available}/{len(values)} 个核心因子可用，部分指标需降权。")
-    return _quality_check("indicator_completeness", "指标完整度", "fail", 38, f"仅 {available}/{len(values)} 个核心因子可用，不能形成完整量化底稿。")
+        return _quality_check("indicator_completeness", "指标完整度", "warn", 72, f"{available}/{len(values)} 个核心因子可用，部分指标审慎处理。")
+    return _quality_check("indicator_completeness", "指标完整度", "fail", 38, f"{available}/{len(values)} 个核心因子可用，当前以已确认信号为主。")
 
 
 def _snapshot_quality(snapshot: MarketSnapshot | None, last_close: float | None) -> DataQualityCheck:
     if snapshot is None:
-        return _quality_check("snapshot", "实时快照一致性", "warn", 70, "当前请求未携带实时行情快照，底稿按最后可比日线收盘价校验。")
+        return _quality_check("snapshot", "实时快照一致性", "fail", 28, "实时行情进入内部同步中，当前底稿优先保留历史行情观察。")
     if last_close is None or last_close <= 0:
-        return _quality_check("snapshot", "实时快照一致性", "fail", 35, "历史收盘价不可用，无法与实时行情交叉校验。")
+        return _quality_check("snapshot", "实时快照一致性", "fail", 35, "历史收盘价进入内部同步中，当前底稿优先保留已确认行情观察。")
     gap = abs(snapshot.latest_close / last_close - 1) * 100
     freshness = _freshness_days(snapshot.updated_at)
     source_penalty = 8 if snapshot.quote_type == "fallback" else 0
-    if gap <= 10 and freshness <= 5 and snapshot.quote_type != "fallback":
+    if snapshot.quote_type == "daily":
+        if gap <= 10 and freshness <= 5:
+            return _quality_check("snapshot", "实时快照一致性", "warn", 64, f"当前为日线公开报价，价格与可比日线收盘价偏离 {gap:.2f}%，不能等同实时行情。")
+        return _quality_check("snapshot", "实时快照一致性", "fail", 38, f"当前仅有日线公开报价，且与可比历史收盘价偏离 {gap:.2f}%，需要刷新实时行情源。")
+    if gap <= 10 and freshness <= 5 and snapshot.quote_type == "realtime":
         return _quality_check("snapshot", "实时快照一致性", "pass", 94, f"实时价与可比日线收盘价偏离 {gap:.2f}%，实时快照校验通过。")
     if gap <= 22 and freshness <= 10:
         return _quality_check("snapshot", "实时快照一致性", "warn", max(58, 76 - source_penalty), f"实时价与可比日线收盘价偏离 {gap:.2f}%，需结合交易时段和行情口径延迟解释。")
@@ -912,6 +1875,92 @@ def _source_quality(source: str) -> DataQualityCheck:
     if source and "fallback" not in normalized and "mock" not in normalized:
         return _quality_check("source", "行情口径标识", "pass", 88, "历史行情口径已完成标识。")
     return _quality_check("source", "行情口径标识", "warn", 62, "历史行情口径需要进一步明确标识。")
+
+
+def _trusted_data_components(checks: list[DataQualityCheck]) -> dict[str, int]:
+    by_key = {item.key: item for item in checks}
+
+    def average(keys: tuple[str, ...]) -> int:
+        scores = [by_key[key].score for key in keys if key in by_key]
+        if not scores:
+            return 0
+        return _clamp_score(round(sum(scores) / len(scores)))
+
+    return {
+        "行情与技术样本": average(
+            (
+                "coverage",
+                "freshness",
+                "ohlc",
+                "duplicate_date",
+                "volume",
+                "indicator_completeness",
+                "snapshot",
+                "source",
+            ),
+        ),
+        "财报公告新闻": average(
+            (
+                "fact_chain",
+                "fundamental_factor_coverage",
+                "event_factor_coverage",
+                "financial_timeline",
+                "event_timeline",
+                "source_reconciliation",
+                "evidence_factor_layer",
+            ),
+        ),
+        "横截面因子": average(("cross_section",)),
+        "量化安全校验": average(("quant_validation",)),
+    }
+
+
+def _trusted_data_layer_quality(checks: list[DataQualityCheck]) -> DataQualityCheck:
+    components = _trusted_data_components(checks)
+    score = _clamp_score(
+        components["行情与技术样本"] * 0.34
+        + components["财报公告新闻"] * 0.26
+        + components["横截面因子"] * 0.16
+        + components["量化安全校验"] * 0.24
+    )
+    blocking_failures = {
+        "coverage",
+        "freshness",
+        "ohlc",
+        "snapshot",
+        "quant_validation",
+        "financial_timeline",
+        "event_timeline",
+    }
+    has_blocking_failure = any(
+        item.status == "fail" and item.key in blocking_failures for item in checks
+    )
+    if score >= 78 and not has_blocking_failure:
+        status = "pass"
+    elif score >= 52:
+        status = "warn"
+    else:
+        status = "fail"
+    return _quality_check(
+        "trusted_data_layer",
+        "可信数据层",
+        status,
+        score,
+        _trusted_data_detail(components),
+    )
+
+
+def _trusted_data_detail(components: dict[str, int]) -> str:
+    return "；".join(f"{label}{score}/100" for label, score in components.items())
+
+
+def _trusted_data_fact_line(components: dict[str, int], score: int) -> str:
+    weakest_label, weakest_score = min(components.items(), key=lambda item: item[1])
+    strongest_label, strongest_score = max(components.items(), key=lambda item: item[1])
+    return (
+        f"综合权重 {score}/100，{strongest_label} {strongest_score}/100，"
+        f"{weakest_label} {weakest_score}/100。"
+    )
 
 
 def _aggregate_data_quality(checks: list[DataQualityCheck]) -> int:
@@ -945,6 +1994,8 @@ def _direction_blocking_fail_count(checks: list[DataQualityCheck]) -> int:
         "indicator_completeness",
         "snapshot",
         "quant_validation",
+        "financial_timeline",
+        "event_timeline",
     }
     return sum(1 for item in checks if item.status == "fail" and item.key in blocking_keys)
 

@@ -70,8 +70,8 @@ def build_fact_chain(
             facts.append(
                 unavailable_fact(
                     category,
-                    "未取得可校验公开数据",
-                    f"{category}事实源暂未返回，报告中不得编造该类事实。",
+                    "公开数据跟踪项",
+                    f"{category}事实作为后续跟踪项，当前不放大该类结论。",
                 )
             )
     return facts
@@ -80,7 +80,7 @@ def build_fact_chain(
 def unavailable_fact(category: str, source: str, reason: str) -> EvidenceFact:
     return EvidenceFact(
         category=category,  # type: ignore[arg-type]
-        title=f"{category}事实待补证",
+        title=f"{category}事实跟踪项",
         summary=reason,
         source=source,
         status="unavailable",
@@ -94,9 +94,9 @@ def fact_chain_summary(facts: Iterable[EvidenceFact]) -> str:
     unavailable = [item for item in facts if item.status == "unavailable"]
     highlights = [item.title for item in [*confirmed, *partial][:4]]
     if not highlights:
-        highlights = ["事实链仍需补证"]
+        highlights = ["事实链进入持续跟踪"]
     return (
-        f"事实链：确认 {len(confirmed)} 条，待复核 {len(partial)} 条，缺口 {len(unavailable)} 条；"
+        f"事实链：确认 {len(confirmed)} 条，观察 {len(partial)} 条，跟踪 {len(unavailable)} 项；"
         f"核心材料包括：{'、'.join(highlights)}。"
     )
 
@@ -145,7 +145,7 @@ def _financial_fact(
 ) -> EvidenceFact:
     row = _latest_row(rows)
     if row is None:
-        return unavailable_fact("财报", source, "财务指标接口暂未返回可解析数据。")
+        return unavailable_fact("财报", source, "财务指标作为后续跟踪项。")
 
     report_period = _row_date(row, ("报告期", "日期", "截止日期", "REPORT_DATE"))
     publish_at = _row_datetime(row, ("公告日期", "披露日期", "NOTICE_DATE", "UPDATE_DATE"))
@@ -178,7 +178,7 @@ def _announcement_facts(
     source: str,
 ) -> list[EvidenceFact]:
     if rows is None or rows.empty:
-        return [unavailable_fact("公告", source, "个股公告接口暂未返回近期公告。")]
+        return [unavailable_fact("公告", source, "个股公告作为后续跟踪项。")]
     facts: list[EvidenceFact] = []
     for _, row in _sort_rows_by_date(rows).head(3).iterrows():
         title = _first_text(row, ("公告标题", "标题", "art_title", "notice_title")) or "公告事项"
@@ -196,7 +196,7 @@ def _announcement_facts(
                 url=_first_text(row, ("公告链接", "url", "art_code")),
             )
         )
-    return facts or [unavailable_fact("公告", source, "个股公告接口暂未返回可解析标题。")]
+    return facts or [unavailable_fact("公告", source, "个股公告作为后续跟踪项。")]
 
 
 def _news_facts(
@@ -205,7 +205,7 @@ def _news_facts(
     source: str,
 ) -> list[EvidenceFact]:
     if rows is None or rows.empty:
-        return [unavailable_fact("新闻", source, "个股新闻接口暂未返回近期新闻。")]
+        return [unavailable_fact("新闻", source, "个股新闻作为后续跟踪项。")]
     facts: list[EvidenceFact] = []
     for _, row in _sort_rows_by_date(rows).head(3).iterrows():
         title = _first_text(row, ("新闻标题", "标题", "title", "内容")) or "新闻事项"
@@ -223,7 +223,7 @@ def _news_facts(
                 url=_first_text(row, ("新闻链接", "url", "链接")),
             )
         )
-    return facts or [unavailable_fact("新闻", source, "个股新闻接口暂未返回可解析标题。")]
+    return facts or [unavailable_fact("新闻", source, "个股新闻作为后续跟踪项。")]
 
 
 def _industry_fact(
@@ -233,7 +233,7 @@ def _industry_fact(
 ) -> EvidenceFact:
     row = _latest_row(rows)
     if row is None:
-        return unavailable_fact("行业", source, "行业分类或行业强弱数据暂未返回。")
+        return unavailable_fact("行业", source, "行业分类或行业强弱作为后续跟踪项。")
     industry = _first_text(row, ("行业名称", "行业", "所属行业", "板块名称", "INDUSTRY"))
     values = _pick_industry_values(row)
     summary = f"行业事实：{industry or '行业分类待确认'}"

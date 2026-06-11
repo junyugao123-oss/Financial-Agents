@@ -81,6 +81,34 @@ export interface QuantIndicator {
   detail: string;
 }
 
+export type FactorFamily =
+  | "trend"
+  | "momentum"
+  | "volatility"
+  | "volume_price"
+  | "cross_section"
+  | "fundamental"
+  | "event"
+  | "validation"
+  | "risk"
+  | "data_quality";
+
+export interface FactorResult {
+  key: string;
+  label: string;
+  family: FactorFamily;
+  value: number | string;
+  unit: string;
+  score: number;
+  direction: "positive" | "negative" | "neutral" | "risk";
+  confidence: number;
+  available: boolean;
+  data_as_of: string | null;
+  evidence_keys: string[];
+  quality_keys: string[];
+  detail: string;
+}
+
 export interface DataQualityCheck {
   key: string;
   label: string;
@@ -100,6 +128,27 @@ export interface EvidenceFact {
   effective_at: string | null;
   available_at: string | null;
   url: string | null;
+}
+
+export interface EvidenceLedgerItem {
+  key: string;
+  label: string;
+  category:
+    | "实时行情"
+    | "历史行情"
+    | "财报数据"
+    | "公告数据"
+    | "新闻事件"
+    | "行业数据"
+    | "横截面因子"
+    | "量化安全"
+    | "可信数据层";
+  status: "available" | "partial" | "missing" | "blocked";
+  score: number;
+  updated_at: string | null;
+  detail: string;
+  missing_fields: string[];
+  checks: string[];
 }
 
 export interface CrossSectionFactor {
@@ -159,8 +208,10 @@ export interface QuantBrief {
   indicators: QuantIndicator[];
   facts: string[];
   fact_chain: EvidenceFact[];
+  evidence_ledger?: EvidenceLedgerItem[];
   cross_section: CrossSectionContext | null;
   validation_checks: ValidationCheck[];
+  factor_results?: FactorResult[];
   limitations: string[];
 }
 

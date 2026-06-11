@@ -112,7 +112,7 @@ Current quant logic is research-oriented rather than a full trading backtest. It
 
 Current algorithm version:
 
-- `junyu-quant-brief-v3.2`
+- `junyu-quant-brief-v3.3`
 
 Current factor families:
 
@@ -126,6 +126,7 @@ Current factor families:
 - Event factors: announcement/news event classification, rule-based sentiment, publish-time coverage, regulatory-risk flags, and earnings/forecast clues.
 - Quant safety validation: power-off look-ahead check, fact availability check, latency simulation, timestamp semantics check, IC/IR, layered backtest, rolling-window stability, and industry-neutral readiness.
 - Data confidence: information completeness index plus data quality checks.
+- Factor result contract: every research factor must expose `key`, `family`, `score`, `direction`, `confidence`, `available`, `evidence_keys`, and `quality_keys`. A factor without computable data must be marked unavailable instead of receiving a fabricated score.
 
 Crawler-backed evidence rules:
 

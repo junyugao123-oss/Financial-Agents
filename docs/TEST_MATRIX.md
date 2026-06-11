@@ -53,6 +53,7 @@ Expected result:
 
 - `QuantBrief` includes `algorithm_version`, `data_quality_score`, `data_quality_grade`, and `data_quality_checks`.
 - `QuantBrief` includes `fact_chain`, `cross_section`, and `validation_checks`.
+- `QuantBrief` includes `factor_results`, and each factor result points back to evidence ledger keys and quality check keys.
 - Dirty OHLC data is repaired but downgraded.
 - Real-time snapshot and historical close divergence is flagged.
 - Low-quality data cannot be promoted into a bullish signal.
@@ -62,6 +63,7 @@ Expected result:
 - 财报因子 must expose revenue, profit, cash flow, gross margin, ROE, debt ratio, valuation percentile, and forecast gaps without fabricated values.
 - 新闻公告因子 must expose event category, sentiment, publish-time coverage, regulatory risk, and forecast clues without first-person debate text.
 - 因子验证 must include IC/IR, layered backtest, rolling-window stability, latency simulation, and industry-neutral readiness.
+- Unavailable factors must be marked `available=false` instead of being assigned a fake neutral or fixed score.
 
 ## Future Function Power-Off Backtest
 

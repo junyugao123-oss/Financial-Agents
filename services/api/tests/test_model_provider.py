@@ -1,7 +1,10 @@
+from datetime import datetime
+
 import pytest
 
-from app.agent_engine import _strip_user_visible_source_noise
+from app.agent_engine import _role_evidence_digest, _strip_user_visible_source_noise
 from app.model_provider import ModelProvider
+from app.models import DataQualityCheck, EvidenceLedgerItem, QuantBrief, QuantIndicator, ValidationCheck
 from app.settings import Settings
 
 
@@ -100,7 +103,7 @@ async def test_committee_message_keeps_head_to_head_debate_role_specific():
     assert "你是本轮主辩" in system_prompt
     assert "必须直接回应对方观点" in system_prompt
     assert "量化底稿或事实链中的具体数字" in system_prompt
-    assert "一条反证和一条降权条件" in system_prompt
+    assert "一条反证和一条审慎条件" in system_prompt
     assert "普通用户听懂" in system_prompt
     assert "估值压力" in system_prompt
     assert "压力测试" in system_prompt
@@ -122,4 +125,122 @@ def test_committee_visible_text_strips_data_source_noise():
     assert "Eastmoney" not in cleaned
     assert "stock_financial" not in cleaned
     assert "来源" not in cleaned
-    assert "暂未进入本轮可用指标" in cleaned
+    assert "进入后续跟踪" in cleaned
+
+
+def test_role_evidence_digest_is_professional_and_role_specific():
+    brief = QuantBrief(
+        market="港股",
+        symbol="06651.HK",
+        name="五一视界",
+        source="test",
+        algorithm_version="junyu-test",
+        generated_at=datetime(2026, 6, 10, 10, 0, 0),
+        data_as_of="2026-06-10",
+        coverage_days=120,
+        data_quality_score=82,
+        data_quality_grade="中",
+        trend_score=76,
+        momentum_score=69,
+        volatility_score=44,
+        volume_score=63,
+        risk_score=48,
+        evidence_score=80,
+        signal_label="偏多观察",
+        data_quality_checks=[
+            DataQualityCheck(
+                key="trusted_data_layer",
+                label="可信数据层",
+                status="pass",
+                score=84,
+                detail="行情与技术样本88/100；财报公告新闻76/100；横截面因子82/100；量化安全校验90/100",
+            ),
+            DataQualityCheck(
+                key="quant_validation",
+                label="量化安全校验",
+                status="pass",
+                score=90,
+                detail="未来函数与延迟模拟通过。",
+            ),
+        ],
+        validation_checks=[
+            ValidationCheck(
+                key="factor_ic_ir",
+                label="因子有效性",
+                status="pass",
+                detail="IC/IR 在测试窗口内通过。",
+            )
+        ],
+        evidence_ledger=[
+            EvidenceLedgerItem(
+                key="financial_statement",
+                label="财报数据",
+                category="财报数据",
+                status="available",
+                score=82,
+                updated_at="2026-06-10 09:00:00",
+                detail="财报指标进入基本面裁判线。",
+                missing_fields=[],
+                checks=["财报因子覆盖:82/100-通过"],
+            ),
+            EvidenceLedgerItem(
+                key="quant_safety",
+                label="量化安全",
+                category="量化安全",
+                status="available",
+                score=90,
+                updated_at="2026-06-10 10:00:00",
+                detail="未来函数与延迟模拟通过。",
+                missing_fields=[],
+                checks=["因子有效性:通过"],
+            ),
+        ],
+        indicators=[
+            QuantIndicator(
+                key="trusted_data_weight",
+                label="可信数据权重",
+                value=84,
+                unit="/100",
+                direction="positive",
+                detail="行情、事实链、横截面与安全校验综合。",
+            ),
+            QuantIndicator(
+                key="macd",
+                label="MACD 柱",
+                value=0.32,
+                direction="positive",
+                detail="动量扩张。",
+            ),
+            QuantIndicator(
+                key="fund_roe",
+                label="ROE",
+                value=14.2,
+                unit="%",
+                direction="positive",
+                detail="盈利质量处于正向区间。",
+            ),
+            QuantIndicator(
+                key="event_risk",
+                label="事件风险",
+                value=28,
+                unit="/100",
+                direction="neutral",
+                detail="公告风险低。",
+            ),
+        ],
+        facts=["财报因子：ROE 与利润质量进入验证表。", "事件因子：公告风险低。"],
+    )
+
+    quant_digest = _role_evidence_digest(brief, "量化研究员", "base")
+    fundamental_digest = _role_evidence_digest(brief, "基本面分析师", "base")
+    risk_digest = _role_evidence_digest(brief, "风控负责人", "base")
+
+    assert "角色证据包：量化研究员" in quant_digest
+    assert "MACD" in quant_digest
+    assert "角色证据包：基本面分析师" in fundamental_digest
+    assert "ROE" in fundamental_digest
+    assert "量化安全校验" in risk_digest
+    assert "证据账本重点" in fundamental_digest
+    assert "财报数据82/100" in fundamental_digest
+    assert "量化安全90/100" in risk_digest
+    assert quant_digest != fundamental_digest

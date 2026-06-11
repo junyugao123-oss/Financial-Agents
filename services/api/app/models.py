@@ -97,6 +97,36 @@ class QuantIndicator(BaseModel):
     detail: str
 
 
+FactorFamily = Literal[
+    "trend",
+    "momentum",
+    "volatility",
+    "volume_price",
+    "cross_section",
+    "fundamental",
+    "event",
+    "validation",
+    "risk",
+    "data_quality",
+]
+
+
+class FactorResult(BaseModel):
+    key: str
+    label: str
+    family: FactorFamily
+    value: float | str
+    unit: str = ""
+    score: int = Field(ge=0, le=100)
+    direction: Literal["positive", "negative", "neutral", "risk"] = "neutral"
+    confidence: int = Field(ge=0, le=100)
+    available: bool = True
+    data_as_of: str | None = None
+    evidence_keys: list[str] = Field(default_factory=list)
+    quality_keys: list[str] = Field(default_factory=list)
+    detail: str = ""
+
+
 class DataQualityCheck(BaseModel):
     key: str
     label: str
@@ -116,6 +146,28 @@ class EvidenceFact(BaseModel):
     effective_at: date | None = None
     available_at: datetime | None = None
     url: str | None = None
+
+
+class EvidenceLedgerItem(BaseModel):
+    key: str
+    label: str
+    category: Literal[
+        "实时行情",
+        "历史行情",
+        "财报数据",
+        "公告数据",
+        "新闻事件",
+        "行业数据",
+        "横截面因子",
+        "量化安全",
+        "可信数据层",
+    ]
+    status: Literal["available", "partial", "missing", "blocked"]
+    score: int = Field(ge=0, le=100)
+    updated_at: str | None = None
+    detail: str = ""
+    missing_fields: list[str] = Field(default_factory=list)
+    checks: list[str] = Field(default_factory=list)
 
 
 class CrossSectionFactor(BaseModel):
@@ -173,9 +225,11 @@ class QuantBrief(BaseModel):
     signal_label: Literal["偏多观察", "中性观察", "偏空观察", "数据待确认"]
     data_quality_checks: list[DataQualityCheck] = Field(default_factory=list)
     fact_chain: list[EvidenceFact] = Field(default_factory=list)
+    evidence_ledger: list[EvidenceLedgerItem] = Field(default_factory=list)
     cross_section: CrossSectionContext | None = None
     validation_checks: list[ValidationCheck] = Field(default_factory=list)
     indicators: list[QuantIndicator] = Field(default_factory=list)
+    factor_results: list[FactorResult] = Field(default_factory=list)
     facts: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
 

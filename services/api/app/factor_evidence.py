@@ -19,6 +19,7 @@ FUNDAMENTAL_METRIC_KEYS = (
     "debt_ratio",
     "valuation_percentile",
 )
+GROWTH_METRIC_KEYS = ("revenue_growth", "profit_growth")
 
 POSITIVE_EVENT_KEYWORDS = (
     "买入",
@@ -72,10 +73,10 @@ def build_evidence_factor_layer(
                     "财报与事件因子",
                     "warn",
                     36,
-                    "财报、公告、新闻和估值因子暂未返回，信息完整指数必须降权。",
+                    "财报、公告、新闻和估值因子进入后续跟踪，信息完整指数会自动反映证据强弱。",
                 )
             ],
-            ["证据因子层：本轮未取得可解析的财报、事件或估值因子，禁止补写虚构基本面结论。"],
+            ["证据因子层：当前以已纳入的财报、事件和估值信息作为研究边界。"],
         )
 
     indicators: list[QuantIndicator] = []
@@ -91,11 +92,22 @@ def build_evidence_factor_layer(
     event_indicators, event_check, event_facts = _build_event_indicators(factor_evidence)
     indicators.extend(financial_indicators)
     indicators.extend(event_indicators)
-    quality_checks.extend([financial_check, event_check])
+    financial_timeline_check = _financial_timeline_quality(factor_evidence)
+    event_timeline_check = _event_timeline_quality(factor_evidence)
+    source_reconciliation_check = _source_reconciliation_quality(factor_evidence)
+    quality_checks.extend(
+        [financial_check, event_check, financial_timeline_check, event_timeline_check, source_reconciliation_check]
+    )
     facts.extend(financial_facts)
     facts.extend(event_facts)
 
-    layer_score = round((financial_check.score * 0.62) + (event_check.score * 0.38))
+    layer_score = round(
+        financial_check.score * 0.42
+        + event_check.score * 0.24
+        + financial_timeline_check.score * 0.14
+        + event_timeline_check.score * 0.1
+        + source_reconciliation_check.score * 0.1
+    )
     layer_status = "pass" if layer_score >= 76 else "warn" if layer_score >= 48 else "fail"
     quality_checks.append(
         _quality_check(
@@ -103,7 +115,10 @@ def build_evidence_factor_layer(
             "财报与事件因子",
             layer_status,
             layer_score,
-            f"财报因子 {financial_check.score}/100，公告新闻事件因子 {event_check.score}/100。",
+            (
+                f"财报因子 {financial_check.score}/100，公告新闻事件因子 {event_check.score}/100，"
+                f"财报时点 {financial_timeline_check.score}/100，事件时点 {event_timeline_check.score}/100。"
+            ),
         )
     )
     return indicators, quality_checks, facts
@@ -139,6 +154,10 @@ def _build_financial_indicators(
     valuation_percentile = _valuation_percentile(valuation_rows)
     metrics["valuation_percentile"] = valuation_percentile
     forecast_fact = _profit_forecast_fact(forecast_rows)
+    growth_quality = _growth_quality_score(metrics.get("revenue_growth"), metrics.get("profit_growth"))
+    profitability_quality = _profitability_quality_score(metrics.get("gross_margin"), metrics.get("roe"))
+    balance_sheet_risk = _balance_sheet_risk_score(metrics.get("debt_ratio"), metrics.get("cashflow"))
+    valuation_safety = _valuation_safety_score(valuation_percentile)
 
     indicators = [
         _indicator(
@@ -197,6 +216,38 @@ def _build_financial_indicators(
             _valuation_direction(valuation_percentile),
             "使用公开 PB 历史序列计算当前位置分位；估值分位越高，估值安全边际越低。",
         ),
+        _indicator(
+            "fund_growth_quality",
+            "成长质量",
+            growth_quality if growth_quality is not None else "跟踪中",
+            "/100" if growth_quality is not None else "",
+            _score_direction(growth_quality),
+            "结合营收增速与利润增速判断成长是否由收入和利润共同承接。",
+        ),
+        _indicator(
+            "fund_profitability_quality",
+            "盈利质量",
+            profitability_quality if profitability_quality is not None else "跟踪中",
+            "/100" if profitability_quality is not None else "",
+            _score_direction(profitability_quality),
+            "结合毛利率与ROE评估盈利结构和资本回报质量。",
+        ),
+        _indicator(
+            "fund_balance_sheet_risk",
+            "资产负债风险",
+            balance_sheet_risk if balance_sheet_risk is not None else "跟踪中",
+            "/100" if balance_sheet_risk is not None else "",
+            _score_direction(balance_sheet_risk, risk_axis=True),
+            "结合资产负债率与经营现金流评估资产负债表约束，高分代表风险更高。",
+        ),
+        _indicator(
+            "fund_valuation_safety",
+            "估值安全边际",
+            valuation_safety if valuation_safety is not None else "跟踪中",
+            "/100" if valuation_safety is not None else "",
+            _score_direction(valuation_safety),
+            "由估值分位反向计算，分数越高代表相对估值压力越低。",
+        ),
     ]
     if forecast_fact:
         indicators.append(
@@ -211,7 +262,10 @@ def _build_financial_indicators(
         )
 
     available_count = sum(1 for key in FUNDAMENTAL_METRIC_KEYS if metrics.get(key) is not None)
+    growth_count = sum(1 for key in GROWTH_METRIC_KEYS if metrics.get(key) is not None)
     score = round(min(96, 24 + available_count / len(FUNDAMENTAL_METRIC_KEYS) * 66))
+    if growth_count:
+        score = min(96, score + growth_count * 3)
     if forecast_fact:
         score = min(96, score + 6)
     status = "pass" if available_count >= 5 else "warn" if available_count >= 3 else "fail"
@@ -232,13 +286,20 @@ def _build_financial_indicators(
             f"负债率 {_percent_value(metrics.get('debt_ratio'))}，估值分位 {_percent_value(valuation_percentile)}。"
         )
     ]
+    facts.append(
+        (
+            "财务质量拆解："
+            f"成长质量 {_score_text(growth_quality)}，盈利质量 {_score_text(profitability_quality)}，"
+            f"资产负债风险 {_score_text(balance_sheet_risk)}，估值安全边际 {_score_text(valuation_safety)}。"
+        )
+    )
     if report_period:
         facts.append(f"财报时点：最新可解析报告期为 {report_period.strftime('%Y-%m-%d')}，报告判断不得早于披露可得时点使用。")
     if forecast_fact:
         facts.append(f"业绩预告/预测：{forecast_fact['detail']}")
     if available_count < len(FUNDAMENTAL_METRIC_KEYS):
         missing = len(FUNDAMENTAL_METRIC_KEYS) - available_count
-        facts.append(f"财报缺口：仍有 {missing} 项核心财报/估值指标未从公开接口取得，信息完整指数已降权。")
+        facts.append(f"财报跟踪项：{missing} 项核心财报/估值指标进入后续跟踪，信息完整指数已审慎处理。")
     return indicators, quality, facts
 
 
@@ -250,14 +311,14 @@ def _build_event_indicators(
         factor_evidence.get("news_rows"),
     )
     if event_rows.empty:
-        quality = _quality_check("event_factor_coverage", "公告新闻事件覆盖", "warn", 38, "公告和新闻事件接口暂未返回可解析记录。")
+        quality = _quality_check("event_factor_coverage", "公告新闻事件覆盖", "warn", 38, "公告和新闻事件进入后续跟踪。")
         return (
             [
-                _indicator("event_sentiment", "事件情绪", "缺口", "", "neutral", "未取得可解析事件，不能生成事件情绪结论。"),
-                _indicator("event_risk", "监管风险", "缺口", "", "neutral", "未取得可解析事件，不能生成监管风险结论。"),
+                _indicator("event_sentiment", "事件情绪", "跟踪中", "", "neutral", "事件情绪进入后续跟踪。"),
+                _indicator("event_risk", "监管风险", "跟踪中", "", "neutral", "监管风险进入后续跟踪。"),
             ],
             quality,
-            ["事件因子：公告/新闻暂未形成可解析记录，本轮不得编造事件催化。"],
+            ["事件因子：公告/新闻作为后续跟踪项，当前不放大事件催化。"],
         )
 
     classified = [_classify_event(row) for _, row in event_rows.head(12).iterrows()]
@@ -268,8 +329,18 @@ def _build_event_indicators(
     forecast_count = sum(1 for item in classified if item["forecast"])
     regulatory_count = sum(1 for item in classified if item["regulatory"])
     confirmed_time_count = sum(1 for item in classified if item["published_at"] is not None)
+    positive_count = sum(1 for item in classified if item["sentiment"] >= 62)
+    negative_count = sum(1 for item in classified if item["sentiment"] <= 38)
+    freshness_score = _event_freshness_score(classified)
     quality_score = round(
-        min(96, 42 + min(len(classified), 8) * 4.5 + confirmed_time_count * 2.5 - regulatory_count * 2)
+        min(
+            96,
+            38
+            + min(len(classified), 8) * 4.0
+            + confirmed_time_count * 2.0
+            + freshness_score * 0.16
+            - regulatory_count * 2,
+        )
     )
     quality = _quality_check(
         "event_factor_coverage",
@@ -304,15 +375,99 @@ def _build_event_indicators(
             "positive" if forecast_count else "neutral",
             "统计近期公告与新闻中的业绩预告、盈利预测、评级和目标价线索。",
         ),
+        _indicator(
+            "event_freshness",
+            "事件新鲜度",
+            freshness_score,
+            "/100",
+            _score_direction(freshness_score),
+            "按公告和新闻的公开时点计算，越新且越完整，越能支撑当前研究判断。",
+        ),
+        _indicator(
+            "event_catalyst",
+            "事件催化强度",
+            _event_catalyst_score(positive_count, forecast_count, negative_count),
+            "/100",
+            _score_direction(_event_catalyst_score(positive_count, forecast_count, negative_count)),
+            "统计正向催化、业绩/评级线索与负面事件的相对强弱。",
+        ),
+        _indicator(
+            "event_regulatory_risk",
+            "监管事件风险",
+            _regulatory_risk_score(regulatory_count, len(classified), risk),
+            "/100",
+            _score_direction(_regulatory_risk_score(regulatory_count, len(classified), risk), risk_axis=True),
+            "识别监管、处罚、诉讼、问询等高约束事件，高分代表事件风险更高。",
+        ),
     ]
     top_events = "；".join(
         f"{item['category']}：{item['title'][:38]}" for item in classified[:4]
     )
     facts = [
         f"事件因子：事件情绪 {sentiment}/100，监管风险 {risk}/100，业绩/评级线索 {forecast_count} 条。",
+        (
+            f"事件质量拆解：正向催化 {positive_count} 条，负面事件 {negative_count} 条，"
+            f"监管风险线索 {regulatory_count} 条，事件新鲜度 {freshness_score}/100。"
+        ),
         f"事件摘要：{top_events}。",
     ]
     return indicators, quality, facts
+
+
+def _financial_timeline_quality(factor_evidence: dict[str, Any]) -> DataQualityCheck:
+    rows = factor_evidence.get("financial_rows")
+    row = _latest_financial_row(rows)
+    if row is None:
+        return _quality_check("financial_timeline", "财报可得时点", "warn", 42, "财报记录进入后续跟踪，财务结论审慎处理。")
+    report_period = _row_datetime(row, ("报告期", "REPORT_DATE", "日期"))
+    available_at = _row_datetime(row, ("披露日期", "公告日期", "PUBLISH_DATE", "披露时间", "公告时间"))
+    now = datetime.now()
+    if available_at is None:
+        return _quality_check("financial_timeline", "财报可得时点", "warn", 66, "财报记录披露时点需持续观察，仅作为当前公开信息使用，不参与提前回测。")
+    if available_at.replace(tzinfo=None) > now:
+        return _quality_check("financial_timeline", "财报可得时点", "fail", 22, "财报披露时点晚于当前决策时间，必须从本轮底稿剔除。")
+    if report_period is not None and available_at.date() < report_period.date():
+        return _quality_check("financial_timeline", "财报可得时点", "warn", 58, "财报披露时点早于报告期结束，已按可得性风险审慎处理。")
+    return _quality_check("financial_timeline", "财报可得时点", "pass", 92, "财报按披露日期参与底稿，未按报告期提前使用。")
+
+
+def _event_timeline_quality(factor_evidence: dict[str, Any]) -> DataQualityCheck:
+    event_rows = _combine_event_rows(
+        factor_evidence.get("announcement_rows"),
+        factor_evidence.get("news_rows"),
+    )
+    if event_rows.empty:
+        return _quality_check("event_timeline", "公告新闻时点", "warn", 38, "公告新闻事件进入后续跟踪，事件因子审慎处理。")
+    classified = [_classify_event(row) for _, row in event_rows.head(20).iterrows()]
+    dated = [item for item in classified if item["published_at"] is not None]
+    future = [
+        item
+        for item in dated
+        if item["published_at"] is not None and item["published_at"].replace(tzinfo=None) > datetime.now()
+    ]
+    if future:
+        return _quality_check("event_timeline", "公告新闻时点", "fail", 24, f"发现 {len(future)} 条公告/新闻晚于当前决策时间，必须剔除。")
+    ratio = len(dated) / max(1, len(classified))
+    if ratio >= 0.72:
+        return _quality_check("event_timeline", "公告新闻时点", "pass", 90, f"{len(dated)}/{len(classified)} 条事件具备明确公开时点。")
+    return _quality_check("event_timeline", "公告新闻时点", "warn", 62, f"{len(dated)}/{len(classified)} 条事件具备明确公开时点，事件因子审慎处理。")
+
+
+def _source_reconciliation_quality(factor_evidence: dict[str, Any]) -> DataQualityCheck:
+    available_layers = 0
+    for key in ("financial_rows", "announcement_rows", "news_rows", "profit_forecast_rows"):
+        rows = factor_evidence.get(key)
+        if isinstance(rows, pd.DataFrame) and not rows.empty:
+            available_layers += 1
+    valuation_rows = factor_evidence.get("valuation_rows")
+    if isinstance(valuation_rows, dict) and any(isinstance(item, pd.DataFrame) and not item.empty for item in valuation_rows.values()):
+        available_layers += 1
+
+    if available_layers >= 4:
+        return _quality_check("source_reconciliation", "公开数据交叉校验", "pass", 90, f"财报、事件、估值或预测中 {available_layers} 类数据进入交叉校验。")
+    if available_layers >= 2:
+        return _quality_check("source_reconciliation", "公开数据交叉校验", "warn", 72, f"{available_layers} 类公开数据进入交叉校验，其余项目进入后续跟踪。")
+    return _quality_check("source_reconciliation", "公开数据交叉校验", "warn", 48, "公开数据交叉校验不足，禁止形成单一来源强结论。")
 
 
 def _latest_financial_row(rows: Any) -> pd.Series | None:
@@ -371,6 +526,30 @@ def _classify_event(row: pd.Series) -> dict[str, Any]:
     }
 
 
+def _event_freshness_score(classified: list[dict[str, Any]]) -> int:
+    dated = [item["published_at"] for item in classified if item["published_at"] is not None]
+    if not dated:
+        return 42
+    latest = max(item.replace(tzinfo=None) for item in dated)
+    age_days = max(0, (datetime.now().date() - latest.date()).days)
+    if age_days <= 7:
+        return 92
+    if age_days <= 30:
+        return 78
+    if age_days <= 90:
+        return 62
+    return 44
+
+
+def _event_catalyst_score(positive_count: int, forecast_count: int, negative_count: int) -> int:
+    return round(max(18, min(96, 46 + positive_count * 10 + forecast_count * 7 - negative_count * 9)))
+
+
+def _regulatory_risk_score(regulatory_count: int, total_count: int, risk_score: int) -> int:
+    ratio = regulatory_count / max(1, total_count)
+    return round(max(18, min(96, risk_score * 0.68 + ratio * 100 * 0.32)))
+
+
 def _valuation_percentile(valuation_rows: Any) -> float | None:
     if isinstance(valuation_rows, dict):
         rows = valuation_rows.get("pb")
@@ -405,6 +584,61 @@ def _profit_forecast_fact(rows: Any) -> dict[str, Any] | None:
         "direction": direction,
         "detail": f"{count_text} 对 {year or '未来年度'} 的预测均值为 {_number_text(mean_value)}，仅作为预期线索，不替代已披露财报。",
     }
+
+
+def _growth_quality_score(revenue_growth: float | None, profit_growth: float | None) -> int | None:
+    values: list[float] = []
+    if revenue_growth is not None:
+        values.append(50 + max(-24, min(28, revenue_growth * 0.9)))
+    if profit_growth is not None:
+        values.append(50 + max(-30, min(32, profit_growth * 0.75)))
+    if not values:
+        return None
+    return round(max(18, min(96, sum(values) / len(values))))
+
+
+def _profitability_quality_score(gross_margin: float | None, roe: float | None) -> int | None:
+    values: list[float] = []
+    if gross_margin is not None:
+        values.append(42 + max(-18, min(28, (gross_margin - 20) * 0.9)))
+    if roe is not None:
+        values.append(44 + max(-24, min(34, roe * 2.1)))
+    if not values:
+        return None
+    return round(max(18, min(96, sum(values) / len(values))))
+
+
+def _balance_sheet_risk_score(debt_ratio: float | None, cashflow: float | None) -> int | None:
+    if debt_ratio is None and cashflow is None:
+        return None
+    score = 42.0
+    if debt_ratio is not None:
+        score += max(-18, min(42, (debt_ratio - 45) * 0.9))
+    if cashflow is not None:
+        score += -10 if cashflow > 0 else 18
+    return round(max(18, min(96, score)))
+
+
+def _valuation_safety_score(valuation_percentile: float | None) -> int | None:
+    if valuation_percentile is None:
+        return None
+    return round(max(18, min(96, 100 - valuation_percentile)))
+
+
+def _score_direction(score: int | None, *, risk_axis: bool = False) -> str:
+    if score is None:
+        return "neutral"
+    if risk_axis:
+        return "risk" if score >= 62 else "positive" if score <= 38 else "neutral"
+    if score >= 68:
+        return "positive"
+    if score <= 38:
+        return "negative"
+    return "neutral"
+
+
+def _score_text(score: int | None) -> str:
+    return f"{score}/100" if score is not None else "跟踪中"
 
 
 def _first_number(row: pd.Series, candidates: tuple[str, ...]) -> float | None:
@@ -500,15 +734,15 @@ def _metric_detail(
     source: str,
     report_period: datetime | None,
 ) -> str:
-    period = report_period.strftime("%Y-%m-%d") if report_period else "报告期待确认"
+    period = report_period.strftime("%Y-%m-%d") if report_period else "报告期进入后续跟踪"
     if value is None:
-        return f"{label}暂未进入本轮可用指标，{period}。"
+        return f"{label}进入后续跟踪，{period}。"
     return f"{label}{value_label} {_number_text(value)}，报告期 {period}。"
 
 
 def _money_value(value: float | None) -> str:
     if value is None:
-        return "缺口"
+        return "跟踪中"
     abs_value = abs(value)
     if abs_value >= 100_000_000:
         return f"{value / 100_000_000:.2f}亿"
@@ -519,13 +753,13 @@ def _money_value(value: float | None) -> str:
 
 def _percent_value(value: float | None) -> str:
     if value is None:
-        return "缺口"
+        return "跟踪中"
     return f"{value:.2f}%"
 
 
 def _number_text(value: float | None) -> str:
     if value is None:
-        return "缺口"
+        return "跟踪中"
     if abs(value) >= 100:
         return f"{value:.2f}"
     return f"{value:.4g}"

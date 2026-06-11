@@ -208,7 +208,7 @@ export function MobileLanding() {
         .catch((err) => {
           if (err instanceof DOMException && err.name === "AbortError") return;
           setRemoteSuggestions([]);
-          setSearchError(err instanceof Error ? err.message : "股票池检索失败");
+          setSearchError("搜索正在同步，请直接输入代码或稍后再试。");
         })
         .finally(() => {
           if (!controller.signal.aborted) {
@@ -265,8 +265,8 @@ export function MobileLanding() {
         model_name: "deepseek-v4-pro",
       });
       router.push(`/session/${session.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "创建研究任务失败");
+    } catch {
+      setError("研究任务正在准备，请稍后再试或换一个标的。");
     } finally {
       setIsSubmitting(false);
     }
@@ -419,7 +419,7 @@ export function MobileLanding() {
             {[
               ["实时行情", "价格、涨跌幅、成交量和刷新时间"],
               ["公司信息", "公告、新闻、公开资料和事件线索"],
-              ["证据边界", "缺口、滞后和需要复核的风险项"],
+              ["风险边界", "关键价格、事件与跟踪条件"],
             ].map(([title, body], index) => (
               <article key={title} className="rounded-lg border border-white/12 bg-white/[0.06] p-2.5">
                 <div className="flex items-start gap-3">
@@ -747,8 +747,8 @@ export function MobileLanding() {
                         );
                       })}
                       {searchError && localSuggestions.length > 0 ? (
-                        <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-                          全市场股票池暂未返回，当前先展示代码匹配结果。
+                        <div className="rounded-xl bg-teal-50 px-3 py-2 text-xs leading-5 text-teal-800">
+                          已根据当前输入生成候选结果。
                         </div>
                       ) : null}
                     </>
@@ -759,8 +759,8 @@ export function MobileLanding() {
                   ) : (
                     <div className="rounded-xl bg-[#eaf2f4] px-3 py-3 text-sm text-[#52636c]">
                       {searchError
-                        ? "股票池暂未返回，请输入代码或稍后重试。"
-                        : "暂未匹配到标的，请换公司名、简称或代码片段。"}
+                        ? "请输入公司名、简称或代码继续定位。"
+                        : "请输入更完整的公司名、简称或代码片段。"}
                     </div>
                   )}
                 </div>

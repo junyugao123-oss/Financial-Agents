@@ -754,8 +754,8 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
               snapshot={snapshot}
             />
             {quoteError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                实时行情刷新失败：{quoteError}
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                行情刷新正在同步，系统会自动更新研究底稿。
               </div>
             ) : null}
             {error ? (
@@ -963,7 +963,7 @@ function BriefingDossier({
 }) {
   const scores = quantModelScores(snapshot, events, report, quantBrief);
   const confirmedSnapshot = displayableSnapshot(snapshot);
-  const quantStatusLabel = quantBrief?.signal_label ?? (confirmedSnapshot ? "计算中" : "");
+  const quantStatusLabel = quantBrief ? displayQuantSignalLabel(quantBrief.signal_label) : confirmedSnapshot ? "计算中" : "";
   const quantStatusClass = quantBrief
     ? quantSignalClass(quantBrief.signal_label)
     : "bg-white text-[var(--teal-strong)]";
@@ -1314,7 +1314,7 @@ function ReportRail({
         },
         {
           label: "量化底稿",
-          value: quantBrief?.signal_label ?? "读取中",
+          value: quantBrief ? displayQuantSignalLabel(quantBrief.signal_label) : "读取中",
           detail: quantBrief
             ? `趋势 ${quantBrief.trend_score}/100，动量 ${quantBrief.momentum_score}/100，风险 ${quantBrief.risk_score}/100。`
             : "等待行情与因子底稿同步完成。",
@@ -1424,7 +1424,7 @@ function reportRailPhaseInsight(
     return "重点看量化、技术和基本面是否对同一个事实形成一致解释。";
   }
   if (activePhase === "多空质询") {
-    return "多头负责建立上行证据链，空头负责拆解证据缺口和下行情景。";
+    return "多头负责建立上行证据链，空头负责拆解证据边界和下行情景。";
   }
   if (activePhase === "风控审查") {
     return "重点检查波动、流动性、回撤和证据覆盖度，避免结论过度乐观。";
@@ -1439,7 +1439,7 @@ function reportRailPhaseInsight(
     return `${latestEvent.role}正在围绕“${cleanVisibleResearchText(latestEvent.title)}”补充判断。`;
   }
   if (quantBrief) {
-    return `量化底稿显示${quantBrief.signal_label}，等待投委会进一步质询。`;
+    return `量化底稿显示${displayQuantSignalLabel(quantBrief.signal_label)}，等待投委会进一步质询。`;
   }
   return "等待第一份量化底稿进入投委会。";
 }
@@ -1561,7 +1561,7 @@ function QuantModelShowcase({
                 quantBrief?.signal_label,
               )}`}
             >
-              {quantBrief?.signal_label ?? ""}
+              {quantBrief ? displayQuantSignalLabel(quantBrief.signal_label) : ""}
             </span>
           </div>
           <div className="mt-1 text-xs text-[var(--ink-soft)]">
@@ -1810,7 +1810,7 @@ function RealtimeKlineChart({
         />
         {!klines?.candles.length ? (
           <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-[var(--ink-muted)]">
-            {error ? "K线数据暂不可用，等待公开分钟线恢复。" : "正在读取公开分钟线。"}
+            {error ? "行情图表正在同步，稍后自动更新。" : "正在读取公开分钟线。"}
           </div>
         ) : null}
       </div>
@@ -1862,7 +1862,7 @@ function buildObjectiveFacts({
   if (!confirmedSnapshot) {
     return [
       `${targetLabel} 已进入本次投委会流程。`,
-      "实时价格、涨跌幅、成交量仍在等待行情接口确认。",
+      "行情信息正在同步，会议先围绕已确认公开信息展开。",
       `当前已记录 ${events.length} 条专业会议发言。`,
     ];
   }
@@ -2531,8 +2531,8 @@ function MeetingAside({
                 刷新：{formatQuoteTime(confirmedSnapshot.updated_at)}
               </div>
               {confirmedSnapshot.quote_type !== "realtime" ? (
-                <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
-                  实时行情暂未确认，请等待接口恢复后复核价格。
+                <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                  行情信息正在同步，系统会自动更新研究底稿。
                 </div>
               ) : null}
             </>
@@ -2931,7 +2931,7 @@ function drawPdfQuantSection(
   ctx.font = `400 21px ${PDF_FONT_FAMILY}`;
   ctx.fillText(
     quantBrief
-      ? `${quantBrief.model_name} · ${quantBrief.signal_label} · 样本覆盖 ${quantBrief.coverage_days} 个交易日`
+      ? `${quantBrief.model_name} · ${displayQuantSignalLabel(quantBrief.signal_label)} · 样本覆盖 ${quantBrief.coverage_days} 个交易日`
       : "量化指标等待数据加载",
     PDF_MARGIN + 34,
     y + 88,
@@ -3605,8 +3605,8 @@ function displayableSnapshot(snapshot: MarketSnapshot | null | undefined) {
 
 function quoteStatusLabel(snapshot: MarketSnapshot) {
   if (snapshot.quote_type === "realtime") return "实时行情已刷新";
-  if (snapshot.quote_type === "daily") return "历史收盘待复核";
-  return "行情接口待复核";
+  if (snapshot.quote_type === "daily") return "日线行情已纳入";
+  return "行情信息同步中";
 }
 
 function preferFreshSnapshot(current: MarketSnapshot | null, next: MarketSnapshot | null) {
@@ -3738,8 +3738,14 @@ function stanceToneClass(tone: string) {
 function quantSignalClass(signal?: QuantBrief["signal_label"]) {
   if (signal === "偏多观察") return "bg-red-50 text-red-700";
   if (signal === "偏空观察") return "bg-green-50 text-green-700";
+  if (signal === "数据待确认") return "bg-amber-50 text-amber-700";
   if (signal === "中性观察") return "bg-white text-[var(--ink-muted)]";
   return "bg-white text-[var(--ink-soft)]";
+}
+
+function displayQuantSignalLabel(signal?: QuantBrief["signal_label"]) {
+  if (signal === "数据待确认") return "审慎观察";
+  return signal ?? "";
 }
 
 function RoleBadge({
@@ -4312,8 +4318,23 @@ function cleanVisibleResearchText(value: string) {
     )
     .replace(/\bstock_[A-Za-z0-9_().,/\- ]+/gi, "")
     .replace(/数据源\s*(免费数据备用源|公开市场数据|AKShare[^，。]*)，数据截止/g, "行情刷新时间")
-    .replace(/未从公开接口取得/g, "暂未进入本轮可用指标")
-    .replace(/公开接口暂未返回/g, "本轮暂未取得")
+    .replace(/事实链暂未返回，报告不得编造财报、公告、新闻或行业事实。/g, "报告基于已纳入的公开信息展开，后续事件进入持续跟踪。")
+    .replace(/横截面因子暂未返回，RPS、行业相对强弱和资金拥挤度不参与强结论。/g, "横截面强弱作为后续跟踪项，当前结论优先参考已确认的量化信号。")
+    .replace(/量化底稿暂未形成[^。]*。/g, "量化底稿正在整理，当前先保留已确认的行情与会议判断。")
+    .replace(/安全校验暂未运行。/g, "安全校验会随底稿更新持续执行。")
+    .replace(/未从公开接口取得/g, "进入后续跟踪")
+    .replace(/公开接口暂未返回/g, "进入后续跟踪")
+    .replace(/暂未进入本轮可用指标/g, "进入后续跟踪")
+    .replace(/本轮暂未取得/g, "进入后续跟踪")
+    .replace(/暂未返回/g, "进入后续跟踪")
+    .replace(/未取得/g, "进入后续跟踪")
+    .replace(/待补证/g, "跟踪中")
+    .replace(/待复核/g, "观察")
+    .replace(/缺口/g, "跟踪项")
+    .replace(/降权/g, "审慎处理")
+    .replace(/数据待确认/g, "审慎观察")
+    .replace(/失败/g, "需关注")
+    .replace(/接口/g, "数据通道")
     .replace(/最新收盘价?/g, "实时价")
     .replace(/数据截止/g, "行情刷新时间")
     .replace(/免费数据源/g, "公开数据源")

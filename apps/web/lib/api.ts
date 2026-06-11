@@ -8,8 +8,11 @@ import type {
   StockSearchResult,
 } from "./types";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "/api";
+const configuredApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+
+export const API_BASE = configuredApiBase
+  ? configuredApiBase.replace(/\/$/, "")
+  : "/api";
 
 type ApiRequestOptions = {
   signal?: AbortSignal;

@@ -4,7 +4,7 @@ import asyncio
 import json
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException
@@ -347,12 +347,14 @@ async def _run_session_background(session_id: str) -> None:
         try:
             snapshot = await data_provider.get_snapshot(session.market, session.symbol)
             repository.save_market_snapshot(snapshot)
-        except Exception:
-            if cached_snapshot is None:
+        except Exception as exc:
+            if cached_snapshot is None or not _cached_snapshot_is_current(cached_snapshot):
                 raise
             snapshot = cached_snapshot
+            snapshot.notes.append(
+                f"本轮公开行情接口暂不可用，沿用同日缓存快照：{type(exc).__name__}"
+            )
 
-        quant_brief: QuantBrief | None = None
         try:
             quant_brief = await asyncio.wait_for(
                 _load_quant_brief(
@@ -364,8 +366,8 @@ async def _run_session_background(session_id: str) -> None:
                 timeout=24.0,
             )
             _remember_quant_brief(session_id, quant_brief)
-        except Exception:
-            quant_brief = None
+        except Exception as exc:
+            raise RuntimeError("量化底稿生成失败，已停止本轮投委会。") from exc
 
         async for _ in engine.run(
             session,
@@ -407,6 +409,15 @@ def _remember_quant_brief(session_id: str, quant_brief: QuantBrief) -> None:
 def _latest_quant_brief(session_id: str) -> QuantBrief | None:
     quant_briefs: dict[str, QuantBrief] = app.state.quant_briefs
     return quant_briefs.get(session_id)
+
+
+def _cached_snapshot_is_current(snapshot: MarketSnapshot) -> bool:
+    if snapshot.quote_type == "fallback":
+        return False
+    age = datetime.now() - snapshot.updated_at
+    if snapshot.quote_type == "realtime":
+        return age <= timedelta(hours=2)
+    return age <= timedelta(hours=20)
 
 
 async def _load_quant_brief(

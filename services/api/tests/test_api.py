@@ -395,7 +395,9 @@ def test_quant_brief_endpoint_returns_real_indicator_structure():
     assert data["coverage_days"] == 90
     assert data["algorithm_version"].startswith("junyu-quant-brief")
     assert data["data_quality_score"] >= 60
-    assert data["data_quality_grade"] in {"中", "高"}
+    assert data["data_quality_grade"] == "低"
+    snapshot_check = next(item for item in data["data_quality_checks"] if item["key"] == "snapshot")
+    assert snapshot_check["status"] == "fail"
     assert len(data["data_quality_checks"]) >= 6
     assert len(data["indicators"]) >= 6
 
