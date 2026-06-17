@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "apps/web"
+    "apps/web",
+    "apps/video"
   ],
   "scripts": {
     "dev": "npm run dev:api & npm run dev:web",
@@ -31,6 +32,10 @@
     "memory:search": "bash scripts/mempalace_search.sh",
     "memory:status": "mempalace --palace .mempalace/palace status",
     "build": "npm --workspace apps/web run build",
+    "video:studio": "npm --workspace apps/video run studio",
+    "video:render:landscape": "npm --workspace apps/video run render:landscape",
+    "video:render:portrait": "npm --workspace apps/video run render:portrait",
+    "video:still": "npm --workspace apps/video run still",
     "smoke": "bash scripts/smoke.sh"
   },
   "devDependencies": {

@@ -1,0 +1,25 @@
+{
+  "name": "@junyu/video",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render:landscape": "remotion render src/index.ts JunyuQuantPromoLandscape out/junyu-quant-promo-landscape.mp4 --codec=h264 --overwrite",
+    "render:portrait": "remotion render src/index.ts JunyuQuantPromoPortrait out/junyu-quant-promo-portrait.mp4 --codec=h264 --overwrite",
+    "still": "remotion still src/index.ts JunyuQuantPromoLandscape out/junyu-quant-promo-frame.png --frame=900 --overwrite",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/captions": "^4.0.478",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remotion": "^4.0.386"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.386",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}

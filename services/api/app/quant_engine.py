@@ -1796,7 +1796,7 @@ def _coverage_quality(coverage_days: int) -> DataQualityCheck:
 
 def _freshness_quality(freshness_days: int) -> DataQualityCheck:
     if freshness_days <= 5:
-        return _quality_check("freshness", "数据新鲜度", "pass", 96, f"最后交易日距当前 {freshness_days} 天，符合 A/H 股公开行情使用窗口。")
+        return _quality_check("freshness", "数据新鲜度", "pass", 96, f"最后交易日距当前 {freshness_days} 天，符合沪深港股公开行情使用窗口。")
     if freshness_days <= 10:
         return _quality_check("freshness", "数据新鲜度", "warn", 74, f"最后交易日距当前 {freshness_days} 天，可能包含节假日或数据源延迟。")
     return _quality_check("freshness", "数据新鲜度", "fail", 40, f"最后交易日距当前 {freshness_days} 天，必须刷新行情后再形成正式底稿。")
@@ -1865,6 +1865,8 @@ def _snapshot_quality(snapshot: MarketSnapshot | None, last_close: float | None)
         return _quality_check("snapshot", "实时快照一致性", "fail", 38, f"当前仅有日线公开报价，且与可比历史收盘价偏离 {gap:.2f}%，需要刷新实时行情源。")
     if gap <= 10 and freshness <= 5 and snapshot.quote_type == "realtime":
         return _quality_check("snapshot", "实时快照一致性", "pass", 94, f"实时价与可比日线收盘价偏离 {gap:.2f}%，实时快照校验通过。")
+    if gap <= 1 and snapshot.quote_type == "realtime":
+        return _quality_check("snapshot", "实时快照一致性", "warn", 74, f"实时价与可比日线收盘价偏离 {gap:.2f}%，价格口径一致，需结合快照刷新时间复核。")
     if gap <= 22 and freshness <= 10:
         return _quality_check("snapshot", "实时快照一致性", "warn", max(58, 76 - source_penalty), f"实时价与可比日线收盘价偏离 {gap:.2f}%，需结合交易时段和行情口径延迟解释。")
     return _quality_check("snapshot", "实时快照一致性", "fail", 42, f"实时价与可比历史收盘价偏离 {gap:.2f}%，应刷新或更换行情源后再定稿。")

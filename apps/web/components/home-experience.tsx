@@ -20,91 +20,28 @@ import {
 } from "lucide-react";
 import { createResearchSession, searchStocks as fetchStockSearch } from "@/lib/api";
 import { RolePortrait } from "@/components/role-portrait";
+import { homeCopy } from "@/lib/product-copy";
 import type { Depth, Market, StockSearchResult } from "@/lib/types";
 
-const homeSectionIds = ["start", "process", "committee-preview", "research-task"];
+const homeSectionIds = ["start", "video", "process", "committee-preview", "research-task"];
 const homeSnapBreakpoint = "(min-width: 901px)";
 const wheelSnapThreshold = 18;
 
-const steps = [
-  {
-    title: "标的锁定",
-    body: "输入公司名、简称或代码，快速锁定 A 股与港股标的。",
-    icon: Search,
-  },
-  {
-    title: "量化底稿",
-    body: "读取趋势、动量、波动、量价与风险，形成量化底稿。",
-    icon: Activity,
-  },
-  {
-    title: "A/H股数据补证",
-    body: "补全行情、公告、新闻和公开资料，降低信息断层。",
-    icon: BarChart3,
-  },
-  {
-    title: "投委会质询",
-    body: "多头、空头、风控和组合经理围绕底稿逐条质询。",
-    icon: MessageSquareText,
-  },
-  {
-    title: "专业报告",
-    body: "沉淀图表、核心观点、研究建议和风险边界。",
-    icon: Gavel,
-  },
-];
+const stepIcons = [Search, Activity, BarChart3, MessageSquareText, Gavel] as const;
+const pillarIcons = [ClipboardList, BarChart3, FileText] as const;
+const steps = homeCopy.processSteps.map((step, index) => ({
+  ...step,
+  icon: stepIcons[index] ?? Search,
+}));
+const valuePillars = homeCopy.valuePillars.map((item, index) => ({
+  ...item,
+  icon: pillarIcons[index] ?? ClipboardList,
+}));
+const committeePreviewEvents = homeCopy.committeePreviewEvents;
 
-const valuePillars = [
-  {
-    title: "AI 量化与深度推理引擎",
-    body: "量化模型先筛趋势、动量、波动与风险，DeepSeek 再整理成可质询底稿。",
-    icon: ClipboardList,
-  },
-  {
-    title: "A/H股全域数据中枢",
-    body: "持续补全 A 股与港股行情、公告、新闻和公开资料，让讨论建立在可复核信息上。",
-    icon: BarChart3,
-  },
-  {
-    title: "10 位金融专家投委会",
-    body: "首席策略官、量化、基本面、多空、风控与组合经理共同推演，沉淀专业报告。",
-    icon: FileText,
-  },
-];
-
-const committeePreviewEvents = [
-  {
-    role: "首席策略官",
-    duty: "设定会议边界",
-    content: "先确认研究口径：本次只讨论 A 股与港股公开信息，量化底稿作为输入，任何结论都必须被数据和风控复核。",
-    tone: "neutral",
-  },
-  {
-    role: "量化研究员",
-    duty: "拆解多因子信号",
-    content: "量化底稿已经给出趋势、动量、波动和量价结构。模型可以提示方向，但不能直接替代投委会结论。",
-    tone: "neutral",
-  },
-  {
-    role: "多头研究员",
-    duty: "构建上行证据链",
-    content: "如果趋势延续且成交活跃度同步改善，我会把它列入积极观察，但需要公告和基本面证据补强。",
-    tone: "bull",
-  },
-  {
-    role: "空头研究员",
-    duty: "压测下行情景",
-    content: "我不同意过早抬高结论。当前风险在于信号可能只来自短期波动，盈利弹性和事件催化还没有同步抬升。",
-    tone: "bear",
-  },
-  {
-    role: "风控负责人",
-    duty: "约束流动性与回撤风险",
-    content: "正在复核证据权重、波动风险和触发复核条件；完成后会一次性写入会议记录。",
-    tone: "risk",
-    status: "thinking",
-  },
-];
+function isThinkingEvent(event: (typeof committeePreviewEvents)[number]) {
+  return "status" in event && event.status === "thinking";
+}
 
 type StockCandidate = {
   market: Market;
@@ -438,19 +375,19 @@ export function HomeExperience() {
           <div className="container-shell flex min-h-full flex-col justify-between py-3 md:py-8">
           <header className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <div className="text-lg font-semibold">君宇·投研智能体</div>
-              <div className="mt-1 text-sm text-white/70">AI 金融量化分析系统</div>
+              <div className="text-lg font-semibold">{homeCopy.brandName}</div>
+              <div className="mt-1 text-sm text-white/70">{homeCopy.productSubtitle}</div>
             </div>
             <div className="hidden flex-wrap items-center gap-3 text-sm md:flex">
               <span className="inline-flex items-center rounded-full border border-teal-200/45 bg-teal-300/22 px-3 py-1 font-medium text-teal-50">
-                A/H股全域数据
+                {homeCopy.topFeaturePills[0]}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200/45 bg-teal-300/22 px-3 py-1 font-medium text-teal-50">
                 <BadgeCheck size={14} />
-                金融量化算法 × DeepSeek
+                {homeCopy.topFeaturePills[1]}
               </span>
               <span className="inline-flex items-center rounded-full border border-teal-200/45 bg-teal-300/22 px-3 py-1 font-medium text-teal-50">
-                10位金融专家提供专业建议
+                {homeCopy.topFeaturePills[2]}
               </span>
             </div>
           </header>
@@ -459,22 +396,24 @@ export function HomeExperience() {
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/18 bg-black/25 px-3 py-1.5 text-xs text-white/78 md:mb-5 md:text-sm">
                 <BadgeCheck size={16} />
-                AI 金融量化分析系统
+                {homeCopy.heroBadge}
               </div>
               <h1 className="max-w-[760px] text-[30px] font-semibold leading-[1.14] tracking-normal max-[380px]:text-[26px] md:text-[54px] md:leading-[1.16]">
-                <span className="block">AI 金融量化分析系统</span>
-                <span className="block">让一份股票研究报告</span>
-                <span className="block">从模型到投委会完整生成。</span>
+                {homeCopy.heroTitleLines.map((line) => (
+                  <span key={line} className="block">
+                    {line}
+                  </span>
+                ))}
               </h1>
               <p className="mt-3 max-w-[660px] text-sm leading-6 text-white/78 md:mt-6 md:text-lg md:leading-8">
-                输入 A 股或港股标的，系统先用金融量化算法生成趋势、动量、波动与风险底稿，再交由 10 位金融专业角色逐轮质询、修正和收敛，输出带图表的专业报告。
+                {homeCopy.heroDescription}
               </p>
               <div className="mt-5 flex flex-wrap gap-3 md:mt-8">
                 <a
-                  href="#process"
+                  href="#video"
                   className="inline-flex items-center gap-2 rounded-lg bg-teal-200 px-5 py-2.5 text-sm font-semibold text-neutral-950 shadow-[0_0_28px_rgba(94,234,212,0.38)] transition hover:bg-white md:py-3"
                 >
-                  查看流程
+                  {homeCopy.heroPrimaryCta}
                   <ArrowDown size={16} />
                 </a>
               </div>
@@ -483,26 +422,15 @@ export function HomeExperience() {
             <div className="mobile-hero-advantage-card rounded-lg border border-white/14 bg-black/32 p-3 backdrop-blur-sm md:p-5">
               <div className="flex items-center justify-between border-b border-white/12 pb-3 md:pb-4">
                 <div>
-                  <div className="text-xs text-white/58 md:text-sm">核心优势</div>
-                  <div className="mt-1 text-lg font-semibold md:text-xl">AI量化金融分析系统能帮你什么</div>
+                  <div className="text-xs text-white/58 md:text-sm">{homeCopy.heroAdvantageKicker}</div>
+                  <div className="mt-1 text-lg font-semibold md:text-xl">
+                    {homeCopy.heroAdvantageTitle}
+                  </div>
                 </div>
                 <Activity className="text-teal-200" size={22} />
               </div>
               <div className="space-y-2 pt-3 md:space-y-4 md:pt-5">
-                {[
-                  {
-                    title: "金融量化算法先出底稿",
-                    body: "趋势、动量、波动、量价与风险先沉淀为核心证据",
-                  },
-                  {
-                    title: "把A/H股信息整理成证据链",
-                    body: "行情、公告、新闻和公开资料统一沉淀",
-                  },
-                  {
-                    title: "输出可读的专业研究报告",
-                    body: "金融专家交叉质询后形成观点与建议",
-                  },
-                ].map((item, index) => (
+                {homeCopy.heroAdvantageItems.map((item, index) => (
                   <div
                     key={item.title}
                     className="flex items-center gap-3 rounded-lg border border-white/12 bg-white/[0.06] p-2.5 md:p-3"
@@ -524,8 +452,68 @@ export function HomeExperience() {
 
           <div className="flex items-start gap-3 border-t border-white/12 bg-black/20 px-1 py-1.5 text-xs leading-5 text-white/72 md:py-3 md:text-sm">
             <ShieldAlert className="mt-0.5 shrink-0" size={16} />
-            <span>本程序输出仅用于信息整理与研究辅助，不构成任何财务、投资或交易建议。</span>
+            <span>{homeCopy.legalNotice}</span>
           </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="video" className="home-page bg-[var(--ink)] text-white">
+        <div className="home-page-panel">
+          <div className="container-shell grid h-full min-h-full items-center gap-6 py-5 lg:grid-cols-[0.72fr_1.28fr]">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-teal-200/35 bg-teal-300/16 px-3 py-1.5 text-sm font-medium text-teal-50">
+                <Activity size={16} />
+                {homeCopy.video.badge}
+              </div>
+              <h2 className="mt-5 max-w-[520px] text-[32px] font-semibold leading-tight tracking-normal xl:text-[42px]">
+                {homeCopy.video.title}
+              </h2>
+              <p className="mt-4 max-w-[560px] text-base leading-8 text-white/72">
+                {homeCopy.video.body}
+              </p>
+
+              <div className="mt-6 grid gap-2.5">
+                {homeCopy.video.highlights.map((item, index) => (
+                  <div
+                    key={item}
+                    className="flex items-center gap-3 rounded-lg border border-white/12 bg-white/[0.06] px-3 py-3"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-300/18 text-sm font-semibold text-teal-100">
+                      {index + 1}
+                    </span>
+                    <span className="text-sm font-semibold text-white/88">{item}</span>
+                  </div>
+                ))}
+              </div>
+
+              <a
+                href="#process"
+                className="mt-7 inline-flex items-center gap-2 rounded-lg bg-teal-200 px-5 py-3 text-sm font-semibold text-neutral-950 shadow-[0_0_28px_rgba(94,234,212,0.28)] transition hover:bg-white"
+              >
+                {homeCopy.video.cta}
+                <ArrowDown size={16} />
+              </a>
+            </div>
+
+            <div className="min-w-0 rounded-xl border border-teal-100/18 bg-black/32 p-3 shadow-[0_24px_90px_rgba(0,0,0,0.38)] backdrop-blur-sm">
+              <video
+                className="aspect-video w-full rounded-lg bg-black object-cover"
+                controls
+                playsInline
+                preload="metadata"
+                poster={homeCopy.video.desktopPoster}
+                src={homeCopy.video.desktopSource}
+              >
+                当前浏览器暂不支持视频播放。
+              </video>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-xs text-white/66">
+                <span>视频内容与网页主线保持一致</span>
+                <span className="rounded-full bg-teal-300/15 px-2.5 py-1 font-semibold text-teal-100">
+                  横版适配 PC
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -538,41 +526,28 @@ export function HomeExperience() {
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/14 bg-white/8 px-3 py-1 text-xs font-medium text-white/78">
                   <ShieldCheck size={14} />
-                  AI 金融量化分析系统
+                  {homeCopy.processBadge}
                 </div>
                 <h2 className="mt-4 max-w-[660px] text-[25px] font-semibold leading-tight tracking-normal md:text-[34px] min-[1500px]:text-[38px]">
-                  从量化底稿、数据补证到投委会报告，每一步都可追溯。
+                  {homeCopy.processTitle}
                 </h2>
                 <p className="mt-3 max-w-[660px] text-sm leading-6 text-white/72 min-[1500px]:text-base min-[1500px]:leading-7">
-                  专业量化模型先识别趋势、动量、波动、量价与风险；A/H股全域数据补全行情、公告、新闻和公开资料；10 位金融角色围绕同一份底稿开会讨论，最后形成报告。
+                  {homeCopy.processDescription}
                 </p>
               </div>
 
               <div className="mobile-home-pillar-grid mt-6 grid min-h-0 gap-3 sm:grid-cols-3 min-[1500px]:gap-4">
-                {[
-                  [
-                    "AI 量化与深度推理引擎",
-                    "专业量化模型先筛趋势、动量、波动、量价与风险证据，再交给 DeepSeek 组织成可质询底稿。",
-                  ],
-                  [
-                    "A/H股全域数据中枢",
-                    "AI 数据挖掘与爬虫机制持续补全 A 股、港股行情、公告、新闻和公开资料。",
-                  ],
-                  [
-                    "10 位金融专家投委会",
-                    "多头进攻、空头拆解、风控压线、组合收敛，最后写成带图表的专业金融报告。",
-                  ],
-                ].map(([label, text]) => (
-                  <div key={label} className="flex min-h-[150px] min-w-0 flex-col rounded-lg border border-white/12 bg-white/[0.06] p-4 min-[1500px]:min-h-[172px] min-[1500px]:p-5">
-                    <div className="text-lg font-semibold leading-snug tracking-normal text-teal-100 min-[1500px]:text-xl">{label}</div>
-                    <div className="mt-3 text-sm leading-6 text-white/72 min-[1500px]:text-[15px]">{text}</div>
+                {homeCopy.valuePillars.map((item) => (
+                  <div key={item.title} className="flex min-h-[150px] min-w-0 flex-col rounded-lg border border-white/12 bg-white/[0.06] p-4 min-[1500px]:min-h-[172px] min-[1500px]:p-5">
+                    <div className="text-lg font-semibold leading-snug tracking-normal text-teal-100 min-[1500px]:text-xl">{item.title}</div>
+                    <div className="mt-3 text-sm leading-6 text-white/72 min-[1500px]:text-[15px]">{item.body}</div>
                   </div>
                 ))}
               </div>
 
               <div className="mobile-home-strip mt-auto pt-5">
                 <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/12 bg-white/[0.06] p-3">
-                  {["AI 底稿", "A/H股数据", "投委会报告"].map((title) => (
+                  {homeCopy.processStrip.map((title) => (
                     <div
                       key={title}
                       className="flex min-w-0 items-center justify-center gap-2 rounded-md bg-white/[0.04] px-2.5 py-2"
@@ -590,10 +565,10 @@ export function HomeExperience() {
                 <div>
                   <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-sm font-medium text-[var(--teal-strong)]">
                     <Target size={16} />
-                    你会看到的核心能力
+                    {homeCopy.valueKicker}
                   </div>
                   <h3 className="mt-3 max-w-[780px] text-[22px] font-semibold leading-tight tracking-normal md:text-[28px] min-[1500px]:text-[32px]">
-                    一只股票如何经过模型、数据和专业团队，变成一份可读报告。
+                    {homeCopy.valueTitle}
                   </h3>
                 </div>
                 <a
@@ -685,14 +660,17 @@ export function HomeExperience() {
                   <div>
                     <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-sm font-medium text-[var(--teal-strong)]">
                       <MessageSquareText size={16} />
-                      投委会现场预览
+                      {homeCopy.committeePreview.badge}
                     </div>
                     <h2 className="mt-3 max-w-[720px] text-[24px] font-semibold leading-tight tracking-normal md:text-[32px]">
-                      看见金融专业团队如何协同研判，形成团队研究结论。
+                      {homeCopy.committeePreview.title}
                     </h2>
+                    <p className="mt-2 max-w-[680px] text-sm leading-6 text-[var(--ink-muted)]">
+                      {homeCopy.committeePreview.body}
+                    </p>
                   </div>
                   <span className="rounded-full bg-[var(--bg-soft)] px-3 py-1.5 text-xs font-medium text-[var(--ink-muted)]">
-                    会议纪要留痕
+                    {homeCopy.committeePreview.statusLabel}
                   </span>
                 </div>
 
@@ -711,7 +689,7 @@ export function HomeExperience() {
                       }`}
                     >
                       <div className="flex min-w-0 gap-2.5">
-                        <RolePortrait active={event.status === "thinking"} role={event.role} size="normal" />
+                        <RolePortrait active={isThinkingEvent(event)} role={event.role} size="normal" />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center justify-between gap-1.5">
                             <div className="min-w-0">
@@ -724,7 +702,7 @@ export function HomeExperience() {
                               <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[var(--ink-muted)]">
                                 第 {index + 1} 轮
                               </span>
-                              {event.status === "thinking" ? (
+                              {isThinkingEvent(event) ? (
                                 <span className="inline-flex items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-[var(--teal-strong)]">
                                   思考中
                                   <span className="inline-flex w-4 justify-start" aria-hidden="true">
@@ -749,22 +727,20 @@ export function HomeExperience() {
                     报告图表预览
                   </div>
                   <h3 className="mt-3 text-[22px] font-semibold leading-tight">
-                    结论不是一句话，而是一组可追溯证据。
+                    {homeCopy.reportPreview.title}
                   </h3>
                   <div className="mt-5 rounded-lg bg-[var(--bg-soft)] p-4">
                     <div className="flex items-end justify-between gap-3">
-                      {[
-                        ["趋势", "74%", "h-24", "bg-emerald-500/80"],
-                        ["动量", "68%", "h-20", "bg-red-400/80"],
-                        ["波动", "61%", "h-16", "bg-amber-400/90"],
-                        ["风险", "46%", "h-12", "bg-red-500/80"],
-                      ].map(([label, value, height, color]) => (
-                        <div key={label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                      {homeCopy.reportPreview.chartMetrics.map((metric) => (
+                        <div key={metric.label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
                           <div className="flex h-28 w-full items-end rounded-md bg-white px-2 pb-2">
-                            <div className={`w-full rounded-sm ${height} ${color}`} />
+                            <div
+                              className="w-full rounded-sm"
+                              style={{ height: metric.height, backgroundColor: metric.color }}
+                            />
                           </div>
-                          <div className="text-xs font-medium text-[var(--ink)]">{label}</div>
-                          <div className="text-xs text-[var(--ink-soft)]">{value}</div>
+                          <div className="text-xs font-medium text-[var(--ink)]">{metric.label}</div>
+                          <div className="text-xs text-[var(--ink-soft)]">{metric.value}</div>
                         </div>
                       ))}
                     </div>
@@ -785,20 +761,23 @@ export function HomeExperience() {
                 <div className="mobile-final-report-card flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--ink)] p-5 text-white md:p-6">
                   <div className="flex items-center gap-2 text-base font-semibold text-teal-100">
                     <FileText size={18} />
-                    最终专业报告
+                    {homeCopy.reportPreview.badge}
                   </div>
                   <h3 className="zh-keep-phrase mt-3 text-[22px] font-semibold leading-snug">
-                    <span className="block">输出核心观点和研究建议</span>
-                    <span className="block">明确风险边界和跟踪条件</span>
+                    {homeCopy.reportPreview.finalTitleLines.map((line) => (
+                      <span key={line} className="block">
+                        {line}
+                      </span>
+                    ))}
                   </h3>
                   <div className="mt-5 min-h-0 space-y-3 overflow-y-auto pr-1 text-sm leading-6 text-white/72">
                     <p>
-                      报告会把量化底稿、A/H股数据证据、投委会分歧、风控修正和组合经理口径放在同一份文档里。
+                      {homeCopy.reportPreview.body}
                     </p>
                     <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3">
                       <div className="text-sm font-semibold text-teal-100">报告会包含</div>
                       <div className="mt-2 grid gap-2">
-                        {["核心观点", "图表指标", "投资研究建议", "跟踪条件", "风险提示"].map(
+                        {homeCopy.reportPreview.includes.map(
                           (item) => (
                             <div key={item} className="flex items-center gap-2">
                               <CheckCircle2 size={14} className="text-teal-100" />
@@ -831,13 +810,13 @@ export function HomeExperience() {
         <div className="container-shell grid min-h-full items-center gap-10 py-8 md:py-10 lg:grid-cols-[0.9fr_1.1fr]">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--ink-muted)]">
-              AI 金融量化分析系统
+              {homeCopy.researchTask.badge}
             </div>
             <h2 className="mt-5 text-[28px] font-semibold leading-tight tracking-normal md:text-4xl">
-              输入标的，启动量化底稿与投委会分析。
+              {homeCopy.researchTask.title}
             </h2>
             <p className="mt-4 max-w-xl leading-7 text-[var(--ink-muted)]">
-              系统会先生成量化模型底稿，再把 A/H股数据证据交给 10 位金融角色讨论，最后输出专业报告。
+              {homeCopy.researchTask.body}
             </p>
           </div>
 
@@ -846,7 +825,7 @@ export function HomeExperience() {
               <div>
                 <h3 className="text-xl font-semibold">研究任务立项</h3>
                 <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                  锁定 A/H股标的，系统将先生成量化底稿。
+                  {homeCopy.researchTask.formDescription}
                 </p>
               </div>
             </div>

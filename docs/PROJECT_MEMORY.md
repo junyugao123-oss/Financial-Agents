@@ -5,7 +5,7 @@
 君宇·投研智能体 is an AI financial quantitative analysis system. The core value is:
 
 - AI and professional quant models produce a structured research draft.
-- A/H股 data and public information are organized into evidence.
+- 沪深港股 data and public information are organized into evidence.
 - Ten financial professional roles discuss, challenge, revise, and converge.
 - The output is a professional research report with charts, a research direction, risk boundaries, and a disclaimer.
 
@@ -33,7 +33,7 @@ Prefer:
 
 - "AI 金融量化分析系统".
 - "量化模型 x DeepSeek".
-- "A/H股全域数据".
+- "沪深港股全域数据".
 - "10 位金融专家提供专业建议".
 - "信息完整指数".
 - "专业报告".

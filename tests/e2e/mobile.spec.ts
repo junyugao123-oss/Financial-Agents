@@ -149,7 +149,7 @@ test.describe("mobile experience foundation", () => {
 
     await page.getByRole("link", { name: /查看数据证据/ }).click();
     await expect(page).toHaveURL(/#data-hub$/);
-    await expect(page.getByText("A/H股全域数据")).toBeVisible();
+    await expect(page.getByText("沪深港股全域数据")).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.getByRole("link", { name: /查看开会现场/ }).click();

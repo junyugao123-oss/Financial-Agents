@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { RolePortrait } from "@/components/role-portrait";
 import { createResearchSession, searchStocks as fetchStockSearch } from "@/lib/api";
+import { homeCopy } from "@/lib/product-copy";
 import type { Depth, Market, StockSearchResult } from "@/lib/types";
 
 type StockCandidate = {
@@ -28,39 +29,11 @@ type StockCandidate = {
   source?: string;
 };
 
-const mobileDialogue = [
-  {
-    role: "首席策略官",
-    duty: "设定会议边界",
-    content: "先确认研究口径：本次只讨论 A/H股公开信息，量化底稿作为输入，所有结论必须经过数据和风控复核。",
-    tone: "neutral",
-  },
-  {
-    role: "量化研究员",
-    duty: "拆解多因子信号",
-    content: "量化底稿已经给出趋势、动量、波动和量价结构。模型负责形成证据权重，不直接替代投委会结论。",
-    tone: "neutral",
-  },
-  {
-    role: "多头研究员",
-    duty: "构建上行证据链",
-    content: "如果趋势延续且成交活跃度同步改善，可以进入积极观察，但需要公告和基本面证据继续补强。",
-    tone: "bull",
-  },
-  {
-    role: "空头研究员",
-    duty: "压测下行情景",
-    content: "当前风险可能来自短期波动，盈利弹性和事件催化还需要验证，不能过早抬高结论。",
-    tone: "bear",
-  },
-  {
-    role: "风控负责人",
-    duty: "约束风险边界",
-    content: "正在复核证据权重、波动风险和触发复核条件；完成后会一次性写入会议纪要。",
-    tone: "risk",
-    status: "thinking",
-  },
-];
+const mobileDialogue = homeCopy.committeePreviewEvents;
+
+function isThinkingEvent(event: (typeof mobileDialogue)[number]) {
+  return "status" in event && event.status === "thinking";
+}
 
 const stockUniverse: StockCandidate[] = [
   {
@@ -175,6 +148,8 @@ export function MobileLanding() {
     () => mergeStockSuggestions(remoteSuggestions, localSuggestions),
     [remoteSuggestions, localSuggestions],
   );
+  const thinkingEvent =
+    mobileDialogue.find(isThinkingEvent) ?? mobileDialogue[mobileDialogue.length - 1];
 
   useEffect(() => {
     window.requestAnimationFrame(() => {
@@ -302,42 +277,96 @@ export function MobileLanding() {
       >
         <div className="relative z-10 flex h-full w-full flex-col justify-between gap-5">
           <header className="w-full">
-            <div className="text-xl font-semibold leading-tight">君宇·投研智能体</div>
-            <div className="mt-1 text-sm text-white/68">AI 金融量化分析系统</div>
+            <div className="text-xl font-semibold leading-tight">{homeCopy.brandName}</div>
+            <div className="mt-1 text-sm text-white/68">{homeCopy.productSubtitle}</div>
           </header>
 
           <div className="w-full">
             <div className="inline-flex items-center gap-2 rounded-full border border-teal-200/45 bg-teal-300/20 px-3 py-1.5 text-xs font-medium text-teal-50">
               <BadgeCheck size={17} />
-              AI 金融量化分析系统
+              {homeCopy.heroBadge}
             </div>
             <h1 className="mt-5 text-[28px] font-semibold leading-[1.18] tracking-normal [text-wrap:balance]">
-              AI 金融量化分析系统，让一份股票研究报告从模型到投委会完整生成。
+              {homeCopy.heroMobileTitle}
             </h1>
             <p className="mt-4 text-sm leading-7 text-white/76">
-              输入 A 股或港股标的，系统先生成量化底稿，再交由 10 位金融专业角色质询、修正和收敛，输出带图表的专业报告。
+              {homeCopy.heroDescription}
             </p>
             <a
-              href="#process"
+              href="#video"
               onClick={(event) => {
                 event.preventDefault();
-                goToSection("process");
+                goToSection("video");
               }}
               className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-teal-200 px-5 py-3 text-sm font-semibold text-neutral-950 shadow-[0_0_28px_rgba(94,234,212,0.38)] transition hover:bg-white"
             >
-              查看流程
+              {homeCopy.heroPrimaryCta}
               <ArrowDown size={18} />
             </a>
           </div>
 
           <div className="grid w-full grid-cols-3 gap-2">
-            {["量化底稿", "数据证据", "投委会报告"].map((item) => (
+            {homeCopy.heroProofItems.map((item) => (
               <div key={item} className="rounded-lg border border-white/12 bg-white/[0.06] px-2.5 py-3">
                 <CheckCircle2 className="mb-2 text-teal-200" size={16} />
                 <div className="text-xs font-semibold leading-snug text-white/78">{item}</div>
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section
+        id="video"
+        className="h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#050706] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
+      >
+        <div className="flex h-full w-full flex-col justify-between gap-3">
+          <div>
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-teal-200/35 bg-teal-300/16 px-3 py-1.5 text-xs font-medium text-teal-50">
+              <Activity size={16} />
+              {homeCopy.video.badge}
+            </div>
+            <h2 className="mt-4 text-2xl font-semibold leading-snug [text-wrap:balance]">
+              {homeCopy.video.title}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-white/70">
+              {homeCopy.video.body}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-teal-100/18 bg-white/[0.06] p-2.5 shadow-[0_22px_70px_rgba(0,0,0,0.35)]">
+            <video
+              className="h-[36dvh] w-full rounded-lg bg-black object-cover"
+              controls
+              playsInline
+              preload="metadata"
+              poster={homeCopy.video.mobilePoster}
+              src={homeCopy.video.mobileSource}
+            >
+              当前浏览器暂不支持视频播放。
+            </video>
+          </div>
+
+          <div className="grid w-full gap-2">
+            {homeCopy.video.highlights.map((item) => (
+              <div key={item} className="flex items-center gap-2 rounded-lg border border-white/12 bg-white/[0.06] px-3 py-2.5">
+                <CheckCircle2 size={16} className="shrink-0 text-teal-200" />
+                <span className="text-sm font-semibold text-white/78">{item}</span>
+              </div>
+            ))}
+          </div>
+
+          <a
+            href="#process"
+            onClick={(event) => {
+              event.preventDefault();
+              goToSection("process");
+            }}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-teal-200 px-5 py-3 text-sm font-semibold text-neutral-950"
+          >
+            {homeCopy.video.cta}
+            <ArrowDown size={18} />
+          </a>
         </div>
       </section>
 
@@ -349,23 +378,18 @@ export function MobileLanding() {
           <div>
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-teal-200/35 bg-teal-300/16 px-3 py-1.5 text-xs font-medium text-teal-50">
               <Activity size={16} />
-              AI 量化底稿
+              {homeCopy.quantModel.badge}
             </div>
             <h2 className="mt-4 text-2xl font-semibold leading-snug [text-wrap:balance]">
-              AI 量化与深度推理引擎
+              {homeCopy.quantModel.title}
             </h2>
             <p className="mt-2 text-sm leading-6 text-white/70">
-              先用金融量化模型读取趋势、动量、波动、量价与风险，再交给 DeepSeek 组织成可追溯的研究底稿。
+              {homeCopy.quantModel.body}
             </p>
           </div>
 
           <div className="grid w-full grid-cols-2 gap-3">
-            {[
-              ["趋势", "方向与均线结构"],
-              ["动量", "强弱与延续性"],
-              ["波动", "回撤与风险阈值"],
-              ["量价", "成交活跃度"],
-            ].map(([title, body]) => (
+            {homeCopy.quantModel.factors.map(([title, body]) => (
               <div key={title} className="rounded-lg border border-white/12 bg-white/[0.06] p-3">
                 <div className="text-lg font-semibold text-teal-100">{title}</div>
                 <div className="mt-1 text-xs leading-5 text-white/62">{body}</div>
@@ -376,10 +400,10 @@ export function MobileLanding() {
           <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3">
             <div className="flex items-center gap-2 text-base font-semibold text-teal-100">
               <Target size={18} />
-              底稿只做研究输入
+              {homeCopy.quantModel.noteTitle}
             </div>
             <p className="mt-1.5 text-sm leading-6 text-white/68">
-              模型给出证据权重和风险边界，最终结论必须经过多空质询、风控审查和组合经理收敛。
+              {homeCopy.quantModel.noteBody}
             </p>
           </div>
 
@@ -405,22 +429,18 @@ export function MobileLanding() {
           <div>
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-teal-200/35 bg-teal-300/16 px-3 py-1.5 text-xs font-medium text-teal-50">
               <BarChart3 size={16} />
-              A/H股全域数据
+              {homeCopy.dataHub.badge}
             </div>
             <h2 className="mt-4 text-2xl font-semibold leading-snug [text-wrap:balance]">
-              把行情、公告和公开信息整理成证据链。
+              {homeCopy.dataHub.title}
             </h2>
             <p className="mt-2 text-sm leading-6 text-white/70">
-              系统先把可获得的数据按时间、证据类型和可信度整理，给投委会统一底稿。
+              {homeCopy.dataHub.body}
             </p>
           </div>
 
           <div className="flex w-full flex-col gap-3">
-            {[
-              ["实时行情", "价格、涨跌幅、成交量和刷新时间"],
-              ["公司信息", "公告、新闻、公开资料和事件线索"],
-              ["风险边界", "关键价格、事件与跟踪条件"],
-            ].map(([title, body], index) => (
+            {homeCopy.dataHub.items.map(([title, body], index) => (
               <article key={title} className="rounded-lg border border-white/12 bg-white/[0.06] p-2.5">
                 <div className="flex items-start gap-3">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-300/18 text-sm font-semibold text-teal-100">
@@ -457,13 +477,13 @@ export function MobileLanding() {
           <div>
             <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[#e9fbf7] px-3 py-1.5 text-xs font-semibold text-[#075a53]">
               <MessageSquareText size={16} />
-              投委会现场预览
+              {homeCopy.committeePreview.badge}
             </div>
             <h2 className="mt-3 text-[1.35rem] font-semibold leading-tight [text-wrap:balance]">
-              看见金融专业团队如何协同研判，形成团队研究结论。
+              {homeCopy.committeePreview.title}
             </h2>
             <p className="mt-1.5 text-xs leading-5 text-[#52636c]">
-              成员基于同一份底稿表达判断，会议纪要完整留痕。
+              {homeCopy.committeePreview.body}
             </p>
           </div>
 
@@ -502,14 +522,14 @@ export function MobileLanding() {
 
           <div className="rounded-lg border border-dashed border-[#b6ccd3] bg-white/70 p-2">
             <div className="flex items-center gap-3">
-              <RolePortrait active role="风控负责人" size="micro" />
+              <RolePortrait active role={thinkingEvent.role} size="micro" />
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-[#075a53]">
-                  下一位：风控负责人
+                  下一位：{thinkingEvent.role}
                   <span className="ml-1 inline-flex animate-pulse">思考中...</span>
                 </div>
                 <p className="mt-0.5 text-xs leading-5 text-[#52636c]">
-                  正在复核风险边界，完成后写入会议纪要。
+                  {thinkingEvent.content}
                 </p>
               </div>
             </div>
@@ -537,40 +557,35 @@ export function MobileLanding() {
           <div>
             <div className="flex items-center gap-2 text-base font-semibold text-teal-100">
               <FileText size={19} />
-              最终专业报告
+              {homeCopy.reportPreview.badge}
             </div>
             <h2 className="mt-4 text-2xl font-semibold leading-snug [text-wrap:balance]">
-              把讨论、图表和建议沉淀为一份可读报告。
+              {homeCopy.reportPreview.title}
             </h2>
             <p className="mt-2 text-sm leading-6 text-white/70">
-              报告会把量化底稿、A/H股证据、多空分歧、风险修正和组合经理口径放在同一份文档里。
+              {homeCopy.reportPreview.body}
             </p>
           </div>
 
           <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3">
             <div className="flex items-end justify-between gap-3 rounded-lg bg-white/8 p-2.5">
-              {[
-                { label: "趋势", value: "74%", height: 76, color: "#34d399" },
-                { label: "动量", value: "68%", height: 64, color: "#fca5a5" },
-                { label: "波动", value: "61%", height: 52, color: "#fbbf24" },
-                { label: "风险", value: "46%", height: 42, color: "#f87171" },
-              ].map(({ label, value, height, color }) => (
-                <div key={label} className="flex flex-1 flex-col items-center gap-2">
+              {homeCopy.reportPreview.chartMetrics.map((metric) => (
+                <div key={metric.label} className="flex flex-1 flex-col items-center gap-2">
                   <div className="flex h-24 w-full items-end justify-center rounded-lg bg-white/90 px-2 py-2">
                     <div
                       className="w-full rounded-md"
-                      style={{ height, backgroundColor: color }}
+                      style={{ height: metric.height, backgroundColor: metric.color }}
                     />
                   </div>
-                  <div className="text-sm font-semibold text-white">{label}</div>
-                  <div className="text-xs text-white/60">{value}</div>
+                  <div className="text-sm font-semibold text-white">{metric.label}</div>
+                  <div className="text-xs text-white/60">{metric.value}</div>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="grid w-full grid-cols-2 gap-2">
-            {["核心观点", "图表指标", "研究建议", "风险边界"].map((item) => (
+            {homeCopy.reportPreview.includes.slice(0, 4).map((item) => (
               <div key={item} className="flex items-center gap-2 rounded-lg border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm text-white/78">
                 <CheckCircle2 size={16} className="shrink-0 text-teal-200" />
                 <span>{item}</span>
@@ -596,20 +611,20 @@ export function MobileLanding() {
         <div className="flex min-h-full w-full flex-col justify-center">
           <div className="w-full">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#c7d6dc] bg-white px-3 py-1.5 text-xs text-[#52636c]">
-              AI 金融量化分析系统
+              {homeCopy.researchTask.badge}
             </div>
             <h2 className="mt-4 text-2xl font-semibold leading-snug">
-              输入标的，启动量化底稿与投委会分析。
+              {homeCopy.researchTask.title}
             </h2>
             <p className="mt-3 text-sm leading-7 text-[#52636c]">
-              系统会先生成量化模型底稿，再把 A/H股数据证据交给 10 位金融角色讨论，最后输出专业报告。
+              {homeCopy.researchTask.body}
             </p>
           </div>
 
           <form onSubmit={submit} className="mt-5 w-full rounded-lg border border-[#c7d6dc] bg-white p-4 shadow-sm">
             <div className="border-b border-[#c7d6dc] pb-4">
               <h3 className="text-xl font-semibold">研究任务立项</h3>
-              <p className="mt-1 text-sm text-[#52636c]">锁定 A/H股标的，系统将先生成量化底稿。</p>
+              <p className="mt-1 text-sm text-[#52636c]">{homeCopy.researchTask.formDescription}</p>
             </div>
 
             <div className="mt-4 flex w-full flex-col gap-4">
@@ -805,7 +820,7 @@ function MobileLegalNotice() {
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-4 pb-[calc(env(safe-area-inset-bottom)+10px)]">
       <div className="flex w-full items-start gap-2 rounded-t-lg border-t border-white/12 bg-black/[0.82] px-3 py-2 text-[11px] leading-5 text-white/72 backdrop-blur-md">
         <ShieldAlert className="mt-0.5 shrink-0" size={15} />
-        <span>本程序输出仅用于信息整理与研究辅助，不构成任何财务、投资或交易建议。</span>
+        <span>{homeCopy.legalNotice}</span>
       </div>
     </div>
   );
