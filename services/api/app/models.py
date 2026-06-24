@@ -204,6 +204,24 @@ class ValidationCheck(BaseModel):
     detail: str
 
 
+class DecisionSignalPlan(BaseModel):
+    action: Literal["买入观察", "持有观察", "观望观察", "减仓观察", "风险回避"]
+    horizon: Literal["短线", "中线", "中长期", "观察"]
+    score: int = Field(ge=0, le=100)
+    confidence: int = Field(ge=0, le=100)
+    market_phase: str
+    plan_quality: Literal["高", "中", "低"]
+    reason: str
+    price_plan: list[str] = Field(default_factory=list)
+    risk_controls: list[str] = Field(default_factory=list)
+    watch_conditions: list[str] = Field(default_factory=list)
+    invalidation_conditions: list[str] = Field(default_factory=list)
+    catalysts: list[str] = Field(default_factory=list)
+    evidence_keys: list[str] = Field(default_factory=list)
+    data_quality_summary: str
+    lifecycle_status: Literal["active", "watch", "blocked"] = "watch"
+
+
 class QuantBrief(BaseModel):
     market: Market
     symbol: str
@@ -223,6 +241,7 @@ class QuantBrief(BaseModel):
     risk_score: int
     evidence_score: int
     signal_label: Literal["偏多观察", "中性观察", "偏空观察", "数据待确认"]
+    decision_signal: DecisionSignalPlan | None = None
     data_quality_checks: list[DataQualityCheck] = Field(default_factory=list)
     fact_chain: list[EvidenceFact] = Field(default_factory=list)
     evidence_ledger: list[EvidenceLedgerItem] = Field(default_factory=list)

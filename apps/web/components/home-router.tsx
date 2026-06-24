@@ -2,10 +2,17 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { MobileLanding } from "@/components/mobile-landing";
 
 const DesktopHomeExperience = dynamic(
   () => import("@/components/home-experience").then((mod) => mod.HomeExperience),
+  {
+    loading: () => <HomeLoadingSurface />,
+    ssr: false,
+  },
+);
+
+const MobileLandingExperience = dynamic(
+  () => import("@/components/mobile-landing").then((mod) => mod.MobileLanding),
   {
     loading: () => <HomeLoadingSurface />,
     ssr: false,
@@ -24,11 +31,11 @@ export function HomeRouter() {
     return () => viewportQuery.removeEventListener("change", syncViewport);
   }, []);
 
-  if (isMobile === false) {
-    return <DesktopHomeExperience />;
+  if (isMobile === null) {
+    return <HomeLoadingSurface />;
   }
 
-  return <MobileLanding />;
+  return isMobile ? <MobileLandingExperience /> : <DesktopHomeExperience />;
 }
 
 function HomeLoadingSurface() {

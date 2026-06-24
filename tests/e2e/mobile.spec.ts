@@ -132,24 +132,30 @@ test.describe("mobile experience foundation", () => {
     await page.goto("/?v=mobile-e2e#research-task");
 
     await expect(page).toHaveURL(/#start$/);
-    await expect(page.getByRole("heading", { name: /AI 金融量化分析系统/ }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /输入一只股票/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /观看一分钟介绍/ })).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 
   test("keeps the homepage sections readable on phone widths", async ({ page }) => {
     await page.goto("/?v=mobile-e2e#start");
 
-    await expect(page.getByRole("link", { name: /查看流程/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /观看一分钟介绍/ })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
-    await page.getByRole("link", { name: /查看流程/ }).click();
+    await page.getByRole("link", { name: /观看一分钟介绍/ }).click();
+    await expect(page).toHaveURL(/#video$/);
+    await expect(page.getByRole("heading", { name: /60 秒看懂/ })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await jumpToSection(page, "process");
     await expect(page).toHaveURL(/#process$/);
-    await expect(page.getByRole("heading", { name: "AI 量化与深度推理引擎" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "人工智能量化与深度推理引擎" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.getByRole("link", { name: /查看数据证据/ }).click();
     await expect(page).toHaveURL(/#data-hub$/);
-    await expect(page.getByText("沪深港股全域数据")).toBeVisible();
+      await expect(page.locator("#data-hub").getByText("沪深港股全域数据")).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.getByRole("link", { name: /查看开会现场/ }).click();
@@ -202,15 +208,22 @@ test.describe("mobile experience foundation", () => {
 async function openResearchTaskForm(page: Page) {
   await page.goto("/?v=mobile-e2e#start");
 
-  await page.getByRole("link", { name: /查看流程/ }).click();
-  await page.getByRole("link", { name: /查看数据证据/ }).click();
-  await page.getByRole("link", { name: /查看开会现场/ }).click();
-  await page.getByRole("link", { name: /查看报告产物/ }).click();
-  await page.getByRole("link", { name: /输入标的开始分析/ }).click();
+  await jumpToSection(page, "research-task");
 
   const form = page.locator("form", { hasText: "研究任务立项" });
   await expect(form).toBeVisible();
   return form;
+}
+
+async function jumpToSection(page: Page, sectionId: string) {
+  await page.evaluate((id) => {
+    const target = document.getElementById(id);
+    const root = target?.closest("main");
+    if (target && root) {
+      root.scrollTo({ top: target.offsetTop, behavior: "instant" });
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${id}`);
+    }
+  }, sectionId);
 }
 
 async function mockResearchApi(page: Page) {

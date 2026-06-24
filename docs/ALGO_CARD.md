@@ -112,7 +112,14 @@ Current quant logic is research-oriented rather than a full trading backtest. It
 
 Current algorithm version:
 
-- `junyu-quant-brief-v3.3`
+- `junyu-quant-brief-v4.0-dsa`
+
+Current decision-signal contract:
+
+- QuantBrief is no longer only an indicator bundle. It must produce a `decision_signal`.
+- `decision_signal` must include action, horizon, signal score, confidence, market phase, plan quality, reason, price plan, risk controls, watch conditions, invalidation conditions, catalysts, evidence keys, data-quality summary, and lifecycle status.
+- User-facing reports should lead with the action口径 and tracking plan. Raw indicators support the conclusion; they are not the conclusion.
+- A decision signal can only be upgraded when factor evidence, data quality, and quant safety validation align. A strong single factor is not enough.
 
 Current factor families:
 
@@ -141,6 +148,9 @@ Current signal gate:
 - High risk alone must not automatically become `偏空观察`.
 - `偏多观察` requires trend, momentum, volume, information completeness, and data quality to align.
 - `偏空观察` requires weak trend/momentum plus downside evidence, not just one volatile day.
+- `买入观察` requires trend, momentum, volume, information completeness, data quality, and risk to align.
+- `风险回避` requires risk pressure or data/safety blockers that make an offensive research口径 unsafe.
+- Every non-neutral action must include watch conditions and invalidation conditions.
 
 Current known gaps:
 

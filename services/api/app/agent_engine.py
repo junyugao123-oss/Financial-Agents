@@ -360,7 +360,7 @@ class DecisionRoomEngine:
             saved = self.repository.save_event(event)
             recent_context.append(f"{sequence}. {role}（{event_type}）：{content}")
             yield saved
-            await asyncio.sleep(max(1.2, self.settings.event_pacing_seconds))
+            await asyncio.sleep(max(0.8, self.settings.event_pacing_seconds))
 
         events = self.repository.list_events(session.id)
         report = render_report(session, snapshot, events, quant_brief)

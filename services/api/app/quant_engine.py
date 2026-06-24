@@ -13,6 +13,7 @@ from .factor_evidence import build_evidence_factor_layer
 from .models import (
     CrossSectionContext,
     DataQualityCheck,
+    DecisionSignalPlan,
     EvidenceLedgerItem,
     EvidenceFact,
     FactorResult,
@@ -26,7 +27,7 @@ from .quant_validation import run_quant_validation_suite, validation_score
 
 MIN_HISTORY_DAYS = 35
 FULL_HISTORY_DAYS = 260
-ALGORITHM_VERSION = "junyu-quant-brief-v3.3"
+ALGORITHM_VERSION = "junyu-quant-brief-v4.0-dsa"
 
 
 def build_quant_brief(
@@ -436,6 +437,25 @@ def build_quant_brief(
         data_quality_checks=data_quality_checks,
         validation_checks=audit_checks,
     )
+    decision_signal = _build_decision_signal_plan(
+        signal_label=signal_label,
+        trend_score=trend_score,
+        momentum_score=momentum_score,
+        volatility_score=volatility_score,
+        volume_score=volume_score,
+        risk_score=risk_score,
+        evidence_score=evidence_score,
+        data_quality_score=data_quality_score,
+        validation_checks=audit_checks,
+        factor_results=factor_results,
+        data_quality_checks=data_quality_checks,
+        latest_price=latest_price,
+        ma20=ma20_value,
+        ma60=ma60_value,
+        breakout_distance_60=breakout_distance_60,
+        atr_pct=atr_pct,
+        volume_ratio=volume_ratio,
+    )
 
     facts = [
         f"样本覆盖 {len(frame)} 个交易日，最后交易日 {data_as_of}。",
@@ -445,6 +465,10 @@ def build_quant_brief(
         (
             f"因子底稿：{sum(1 for item in factor_results if item.available)}/{len(factor_results)} "
             "项因子完成量化计算；每项均绑定证据账本和质量校验。"
+        ),
+        (
+            f"决策信号：{decision_signal.action}，周期 {decision_signal.horizon}，"
+            f"信号分 {decision_signal.score}/100，置信度 {decision_signal.confidence}/100。"
         ),
         _evidence_adjustment_fact_line(evidence_adjustment),
         f"当前参考价格 {_fmt(latest_price)}，20日均线 {_fmt(ma20_value)}，60日均线 {_fmt(ma60_value)}。",
@@ -506,6 +530,7 @@ def build_quant_brief(
         risk_score=risk_score,
         evidence_score=evidence_score,
         signal_label=signal_label,
+        decision_signal=decision_signal,
         data_quality_checks=data_quality_checks,
         fact_chain=fact_items,
         evidence_ledger=evidence_ledger,
@@ -526,13 +551,254 @@ def build_quant_brief(
 def brief_summary(brief: QuantBrief | None) -> str:
     if brief is None:
         return "量化底稿正在整理，所有角色必须基于已确认事实发言。"
+    decision = brief.decision_signal
+    decision_text = (
+        f"决策信号{decision.action}，{decision.reason}；"
+        if decision is not None
+        else ""
+    )
     return (
         f"{brief.name} {brief.symbol}，量化观察为{brief.signal_label}；"
+        f"{decision_text}"
         f"趋势{brief.trend_score}/100，动量{brief.momentum_score}/100，"
         f"量价{brief.volume_score}/100，波动{brief.volatility_score}/100，"
         f"风险约束{brief.risk_score}/100，信息完整指数{brief.evidence_score}/100，"
         f"数据质量{brief.data_quality_score}/100。"
         f"客观事实：{'；'.join(brief.facts[:3])}"
+    )
+
+
+def _build_decision_signal_plan(
+    *,
+    signal_label: str,
+    trend_score: int,
+    momentum_score: int,
+    volatility_score: int,
+    volume_score: int,
+    risk_score: int,
+    evidence_score: int,
+    data_quality_score: int,
+    validation_checks: list[ValidationCheck],
+    factor_results: list[FactorResult],
+    data_quality_checks: list[DataQualityCheck],
+    latest_price: float | None,
+    ma20: float | None,
+    ma60: float | None,
+    breakout_distance_60: float | None,
+    atr_pct: float,
+    volume_ratio: float,
+) -> DecisionSignalPlan:
+    validation = validation_score(validation_checks) if validation_checks else 0
+    relative_strength = _factor_score(factor_results, "relative_strength")
+    financial_quality = _factor_score(factor_results, "financial_quality")
+    event_quality = _factor_score(factor_results, "event_quality")
+    announcement_risk = _factor_score(factor_results, "announcement_risk")
+    factor_validity = _factor_score(factor_results, "factor_validity")
+
+    strength_inputs = [trend_score, momentum_score, volume_score]
+    for optional_score in (relative_strength, financial_quality, event_quality):
+        if optional_score is not None:
+            strength_inputs.append(optional_score)
+    strength_score = sum(strength_inputs) / len(strength_inputs)
+    risk_penalty = max(0, risk_score - 55) * 0.45 + max(0, (announcement_risk or 0) - 60) * 0.35
+    signal_score = _clamp_score(
+        strength_score * 0.44
+        + evidence_score * 0.18
+        + data_quality_score * 0.14
+        + validation * 0.12
+        + (100 - min(risk_score, 100)) * 0.12
+        - risk_penalty
+    )
+    confidence = _clamp_score(
+        evidence_score * 0.34
+        + data_quality_score * 0.28
+        + validation * 0.2
+        + (100 - min(risk_score, 100)) * 0.18
+    )
+
+    has_data_blocker = data_quality_score < 45 or evidence_score < 45
+    if has_data_blocker:
+        action = "观望观察"
+    elif risk_score >= 88 and trend_score < 68:
+        action = "风险回避"
+    elif risk_score >= 80 and signal_score < 58:
+        action = "减仓观察"
+    elif (
+        signal_score >= 68
+        and trend_score >= 62
+        and momentum_score >= 54
+        and volume_score >= 48
+        and risk_score < 78
+    ):
+        action = "买入观察"
+    elif signal_score >= 56 and trend_score >= 52 and risk_score < 84:
+        action = "持有观察"
+    elif trend_score < 42 and momentum_score < 45:
+        action = "减仓观察"
+    else:
+        action = "观望观察"
+
+    horizon = "中线" if action in ("买入观察", "持有观察") and trend_score >= 60 else "观察"
+    market_phase = {
+        "买入观察": "趋势进攻验证",
+        "持有观察": "持有复核",
+        "观望观察": "等待方向确认",
+        "减仓观察": "风险降档",
+        "风险回避": "防守观察",
+    }[action]
+    plan_quality = "高" if confidence >= 75 and data_quality_score >= 70 and validation >= 70 else "中" if confidence >= 58 else "低"
+
+    reason = _decision_reason(
+        action=action,
+        signal_label=signal_label,
+        trend_score=trend_score,
+        momentum_score=momentum_score,
+        volume_score=volume_score,
+        risk_score=risk_score,
+        signal_score=signal_score,
+    )
+    price_plan = [
+        f"当前参考价 {_fmt(latest_price)}，20日均线 {_fmt(ma20)}，60日均线 {_fmt(ma60)}。",
+        f"60日突破距离 {_fmt(breakout_distance_60)}%，ATR14 占比 {_fmt(atr_pct)}%，5/20日量比 {_fmt(volume_ratio)}。",
+    ]
+    if action in ("买入观察", "持有观察"):
+        price_plan.append("若价格站稳核心均线且成交不萎缩，维持进攻或持有观察。")
+    elif action == "风险回避":
+        price_plan.append("若价格继续跌破关键均线或波动扩张，优先降低风险暴露。")
+    else:
+        price_plan.append("等待趋势、量能和风险读数出现同向改善后再上调研究优先级。")
+
+    watch_conditions = [
+        "趋势因子、动量因子和量价因子是否继续同向改善。",
+        "公告、新闻、财务和行业线索是否继续支持当前研究口径。",
+        "风险约束、回撤、波动和流动性是否出现恶化。",
+    ]
+    invalidation_conditions = [
+        "价格跌破核心均线且成交活跃度同步回落。",
+        "风险读数继续抬升并伴随下行波动扩大。",
+        "公告、财务或新闻事件出现与当前口径相反的新证据。",
+    ]
+    risk_controls = [
+        "所有动作口径必须经过量价、数据质量和量化安全校验后再更新。",
+        "风险读数高于 80/100 时，研究结论自动降档并要求风控复核。",
+    ]
+    if announcement_risk is not None and announcement_risk >= 65:
+        risk_controls.append("公告风险偏高，后续必须优先复核公告与监管事件。")
+
+    catalysts = _decision_catalysts(
+        relative_strength=relative_strength,
+        financial_quality=financial_quality,
+        event_quality=event_quality,
+        factor_validity=factor_validity,
+    )
+    evidence_keys = [
+        item.key
+        for item in factor_results
+        if item.available and item.score >= 55 and item.key in {
+            "trend_factor",
+            "momentum_factor",
+            "volume_price_factor",
+            "risk_factor",
+            "relative_strength",
+            "financial_quality",
+            "event_quality",
+            "factor_validity",
+            "trusted_data_factor",
+        }
+    ]
+    data_quality_summary = _decision_quality_summary(data_quality_checks, data_quality_score, validation)
+    lifecycle_status = "active" if action in ("买入观察", "持有观察") else "blocked" if action == "风险回避" else "watch"
+    return DecisionSignalPlan(
+        action=action,  # type: ignore[arg-type]
+        horizon=horizon,  # type: ignore[arg-type]
+        score=signal_score,
+        confidence=confidence,
+        market_phase=market_phase,
+        plan_quality=plan_quality,  # type: ignore[arg-type]
+        reason=reason,
+        price_plan=price_plan,
+        risk_controls=risk_controls,
+        watch_conditions=watch_conditions,
+        invalidation_conditions=invalidation_conditions,
+        catalysts=catalysts,
+        evidence_keys=evidence_keys,
+        data_quality_summary=data_quality_summary,
+        lifecycle_status=lifecycle_status,  # type: ignore[arg-type]
+    )
+
+
+def _factor_score(factors: list[FactorResult], key: str) -> int | None:
+    for item in factors:
+        if item.key == key and item.available:
+            return _ledger_score(item.score)
+    return None
+
+
+def _decision_reason(
+    *,
+    action: str,
+    signal_label: str,
+    trend_score: int,
+    momentum_score: int,
+    volume_score: int,
+    risk_score: int,
+    signal_score: int,
+) -> str:
+    if action == "买入观察":
+        return (
+            f"综合信号 {signal_score}/100，趋势、动量和量价结构具备进攻条件，"
+            f"风险约束 {risk_score}/100 未触发硬性降档。"
+        )
+    if action == "持有观察":
+        return (
+            f"综合信号 {signal_score}/100，{signal_label} 仍可保留，"
+            "但需要继续等待成交、公告和财务证据确认。"
+        )
+    if action == "减仓观察":
+        return (
+            f"综合信号 {signal_score}/100，趋势 {trend_score}/100、动量 {momentum_score}/100 "
+            f"与风险约束 {risk_score}/100 不匹配，优先降低进攻口径。"
+        )
+    if action == "风险回避":
+        return f"风险约束 {risk_score}/100 已进入高位，当前应先保护研究边界。"
+    return (
+        f"综合信号 {signal_score}/100，趋势 {trend_score}/100、动量 {momentum_score}/100、"
+        f"量价 {volume_score}/100 尚未形成一致方向。"
+    )
+
+
+def _decision_catalysts(
+    *,
+    relative_strength: int | None,
+    financial_quality: int | None,
+    event_quality: int | None,
+    factor_validity: int | None,
+) -> list[str]:
+    catalysts: list[str] = []
+    if relative_strength is not None and relative_strength >= 60:
+        catalysts.append("相对强弱处于可跟踪区间。")
+    if financial_quality is not None and financial_quality >= 60:
+        catalysts.append("财务质量对当前口径形成支撑。")
+    if event_quality is not None and event_quality >= 60:
+        catalysts.append("公告或新闻事件对当前口径形成增量验证。")
+    if factor_validity is not None and factor_validity >= 65:
+        catalysts.append("因子有效性验证支持继续跟踪。")
+    if not catalysts:
+        catalysts.append("核心催化以量价结构、公告和财务证据的后续同向验证为主。")
+    return catalysts
+
+
+def _decision_quality_summary(
+    checks: list[DataQualityCheck],
+    data_quality_score: int,
+    validation: int,
+) -> str:
+    pass_count = sum(1 for item in checks if item.status == "pass")
+    warn_count = sum(1 for item in checks if item.status == "warn")
+    fail_count = sum(1 for item in checks if item.status == "fail")
+    return (
+        f"数据质量 {data_quality_score}/100，量化安全 {validation}/100；"
+        f"校验通过 {pass_count} 项，关注 {warn_count} 项，阻断 {fail_count} 项。"
     )
 
 

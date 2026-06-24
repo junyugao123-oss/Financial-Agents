@@ -397,6 +397,9 @@ const participantRoster = participantRosterOrder.flatMap((role) => {
 
 export function SessionExperience({ sessionId }: { sessionId: string }) {
   const autoOpenedReportRef = useRef(false);
+  const streamHealthyRef = useRef(false);
+  const lastStreamMessageAtRef = useRef(0);
+  const lastFullSyncAtRef = useRef(0);
   const [session, setSession] = useState<ResearchSession | null>(null);
   const [events, setEvents] = useState<DecisionEvent[]>([]);
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
@@ -468,6 +471,10 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     const source = new EventSource(sessionEventsUrl(sessionId));
     let reportJumpTimer: number | null = null;
+    const markStreamActive = () => {
+      streamHealthyRef.current = true;
+      lastStreamMessageAtRef.current = Date.now();
+    };
     const openReportPageFromDom = () => {
       autoOpenedReportRef.current = true;
       const target = document.querySelector<HTMLElement>("#final-report-page");
@@ -478,6 +485,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
     };
 
     source.addEventListener("market_snapshot", (message) => {
+      markStreamActive();
       const payload = parseEventPayload<MarketSnapshot>(message);
       if (!payload) {
         setStatus("error");
@@ -491,6 +499,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
     });
 
     source.addEventListener("quant_brief", (message) => {
+      markStreamActive();
       const payload = parseEventPayload<QuantBrief>(message);
       if (payload) {
         setQuantBrief(payload);
@@ -498,10 +507,12 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
     });
 
     source.addEventListener("quant_brief_error", () => {
+      markStreamActive();
       setQuantBrief(null);
     });
 
     source.addEventListener("decision_event", (message) => {
+      markStreamActive();
       const event = parseEventPayload<DecisionEvent>(message);
       if (!event) {
         setStatus("error");
@@ -515,6 +526,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
     });
 
     source.addEventListener("report_ready", (message) => {
+      markStreamActive();
       const payload = parseEventPayload<ResearchReport>(message);
       if (!payload) {
         setStatus("error");
@@ -529,6 +541,7 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
     });
 
     source.addEventListener("session_error", (message) => {
+      markStreamActive();
       const payload = parseEventPayload<{ message?: string }>(message);
       setError(payload?.message ?? "投委会直播连接失败。");
       setStatus("error");
@@ -536,15 +549,20 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
     });
 
     source.addEventListener("heartbeat", () => {
+      markStreamActive();
       setStatus((current) => (current === "completed" || current === "live" ? current : "connecting"));
     });
 
     source.onerror = () => {
+      if (Date.now() - lastStreamMessageAtRef.current > 10_000) {
+        streamHealthyRef.current = false;
+      }
       setStatus((current) => (current === "completed" || current === "live" ? current : "connecting"));
       setError(null);
     };
 
     return () => {
+      streamHealthyRef.current = false;
       source.close();
       if (reportJumpTimer) {
         window.clearTimeout(reportJumpTimer);
@@ -557,7 +575,11 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
     let pollTimer: number | null = null;
     let controller: AbortController | null = null;
 
-    const syncState = async () => {
+    const syncState = async (force = false) => {
+      const now = Date.now();
+      const streamFresh = streamHealthyRef.current && now - lastStreamMessageAtRef.current < 6_000;
+      if (!force && streamFresh && now - lastFullSyncAtRef.current < 20_000) return;
+      lastFullSyncAtRef.current = now;
       controller?.abort();
       controller = new AbortController();
       try {
@@ -590,8 +612,8 @@ export function SessionExperience({ sessionId }: { sessionId: string }) {
       }
     };
 
-    syncState();
-    pollTimer = window.setInterval(syncState, 1_500);
+    syncState(true);
+    pollTimer = window.setInterval(() => syncState(false), 5_000);
 
     return () => {
       cancelled = true;
@@ -963,9 +985,18 @@ function BriefingDossier({
 }) {
   const scores = quantModelScores(snapshot, events, report, quantBrief);
   const confirmedSnapshot = displayableSnapshot(snapshot);
-  const quantStatusLabel = quantBrief ? displayQuantSignalLabel(quantBrief.signal_label) : confirmedSnapshot ? "计算中" : "";
-  const quantStatusClass = quantBrief
-    ? quantSignalClass(quantBrief.signal_label)
+  const decisionSignal = quantBrief?.decision_signal;
+  const quantStatusLabel = decisionSignal
+    ? decisionSignal.action
+    : quantBrief
+      ? displayQuantSignalLabel(quantBrief.signal_label)
+      : confirmedSnapshot
+        ? "计算中"
+        : "";
+  const quantStatusClass = decisionSignal
+    ? decisionActionClass(decisionSignal.action)
+    : quantBrief
+      ? quantSignalClass(quantBrief.signal_label)
     : "bg-white text-[var(--teal-strong)]";
   const targetName = resolveTargetName(session, snapshot);
   const targetSymbol = resolveTargetSymbol(session, snapshot);
@@ -1017,9 +1048,9 @@ function BriefingDossier({
             />
             <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-white px-4 py-3 sm:col-span-2">
               <div className="min-w-0">
-                <div className="text-xs text-[var(--ink-soft)]">量化信号</div>
+                <div className="text-xs text-[var(--ink-soft)]">决策信号</div>
                 <div className="mt-0.5 truncate text-xs text-[var(--ink-muted)]">
-                  仅作为投委会讨论底稿
+                  {decisionSignal ? `${decisionSignal.horizon} · ${decisionSignal.market_phase}` : "仅作为投委会讨论底稿"}
                 </div>
               </div>
               {quantStatusLabel ? (
@@ -1088,7 +1119,9 @@ function BriefingDossier({
             })}
           </div>
           <div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs leading-5 text-[var(--ink-muted)]">
-            底稿只作为讨论输入。最终结论必须经过多空质询、风控审查和组合经理收敛。
+            {decisionSignal
+              ? decisionSignal.reason
+              : "底稿只作为讨论输入。最终结论必须经过多空质询、风控审查和组合经理收敛。"}
           </div>
         </aside>
       </div>
@@ -1556,13 +1589,17 @@ function QuantModelShowcase({
               <LineChart size={17} />
               量化模型底稿
             </div>
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${quantSignalClass(
-                quantBrief?.signal_label,
-              )}`}
-            >
-              {quantBrief ? displayQuantSignalLabel(quantBrief.signal_label) : ""}
-            </span>
+            {quantBrief ? (
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  quantBrief.decision_signal
+                    ? decisionActionClass(quantBrief.decision_signal.action)
+                    : quantSignalClass(quantBrief.signal_label)
+                }`}
+              >
+                {quantBrief.decision_signal?.action ?? displayQuantSignalLabel(quantBrief.signal_label)}
+              </span>
+            ) : null}
           </div>
           <div className="mt-1 text-xs text-[var(--ink-soft)]">
             {quantBrief ? `日线底稿 ${quantBrief.data_as_of}` : "等待历史行情与技术指标确认"}
@@ -1583,7 +1620,9 @@ function QuantModelShowcase({
               ))}
             </ul>
             <div className="mt-3 rounded-md bg-[var(--bg-soft)] px-3 py-2 text-xs leading-5 text-[var(--ink-muted)]">
-              以上内容是投委会讨论的事实输入，不直接形成多空结论。
+              {quantBrief?.decision_signal
+                ? quantBrief.decision_signal.reason
+                : "以上内容是投委会讨论的事实输入，不直接形成多空结论。"}
             </div>
           </div>
         </aside>
@@ -2561,6 +2600,16 @@ function researchActionFromReport(
   quantBrief: QuantBrief | null,
   snapshot: MarketSnapshot | null,
 ): ResearchAction {
+  const decisionSignal = quantBrief?.decision_signal;
+  if (decisionSignal) {
+    return {
+      badge: decisionSignal.horizon,
+      label: decisionSignal.action,
+      rationale: decisionSignal.reason,
+      tone: decisionActionTone(decisionSignal.action),
+    };
+  }
+
   const signal = quantBrief?.signal_label;
   const riskScore = quantBrief?.risk_score ?? 50;
   const pctChange = snapshot?.pct_change ?? 0;
@@ -3055,6 +3104,24 @@ function researchRecommendationText(
   snapshot: MarketSnapshot | null,
 ) {
   const targetName = snapshot?.name ?? report.title.replace(/\s*机构式研究报告$/, "");
+  const decisionSignal = quantBrief?.decision_signal;
+
+  if (decisionSignal) {
+    const lines = [
+      `研究建议：${decisionSignal.action}，${decisionSignal.horizon}研究口径。`,
+      `核心观点：${decisionSignal.reason}`,
+      decisionSignal.price_plan.length ? `价格计划：${decisionSignal.price_plan.join("；")}` : "",
+      decisionSignal.watch_conditions.length ? `跟踪条件：${decisionSignal.watch_conditions.join("；")}` : "",
+      decisionSignal.invalidation_conditions.length
+        ? `失效条件：${decisionSignal.invalidation_conditions.join("；")}`
+        : "",
+      decisionSignal.risk_controls.length ? `风险控制：${decisionSignal.risk_controls.join("；")}` : "",
+      decisionSignal.catalysts.length ? `催化线索：${decisionSignal.catalysts.join("；")}` : "",
+      `合规边界：以上为 ${targetName} 的研究辅助输出，不构成任何财务、投资或交易建议。`,
+    ].filter(Boolean);
+
+    return lines.join("\n");
+  }
 
   if (action.label === "买入观察") {
     return [
@@ -3746,6 +3813,19 @@ function quantSignalClass(signal?: QuantBrief["signal_label"]) {
 function displayQuantSignalLabel(signal?: QuantBrief["signal_label"]) {
   if (signal === "数据待确认") return "审慎观察";
   return signal ?? "";
+}
+
+function decisionActionTone(action?: string): ResearchActionTone {
+  if (action === "买入观察" || action === "持有观察") return "positive";
+  if (action === "减仓观察" || action === "风险回避") return "negative";
+  return "neutral";
+}
+
+function decisionActionClass(action?: string) {
+  const tone = decisionActionTone(action);
+  if (tone === "positive") return "bg-red-50 text-red-700";
+  if (tone === "negative") return "bg-green-50 text-green-700";
+  return "bg-white text-[var(--ink-muted)]";
 }
 
 function RoleBadge({

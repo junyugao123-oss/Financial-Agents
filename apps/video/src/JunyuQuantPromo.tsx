@@ -76,28 +76,28 @@ type SceneId = (typeof sceneDefs)[number]["id"];
 
 const captions: Caption[] = [
   {
-    text: "你输入的不是代码，是一次完整投研的起点。",
+    text: "你输入的不是一串数字，是一次完整投研的起点。",
     startMs: 0,
     endMs: 4200,
     timestampMs: null,
     confidence: null,
   },
   {
-    text: "系统先把一只股票拆成趋势、动量、波动、量价和风险。",
+    text: "系统先用量化算法读取趋势、动量、波动、量价和风险。",
     startMs: 4200,
     endMs: 8800,
     timestampMs: null,
     confidence: null,
   },
   {
-    text: "沪深港股标的被锁定，研究对象、市场和代码同步进入模型。",
+    text: "沪深港股标的被锁定，名称、市场和数字代码同步进入模型。",
     startMs: 8800,
     endMs: 13600,
     timestampMs: null,
     confidence: null,
   },
   {
-    text: "金融量化算法先生成底稿：不是结论，而是可质询的证据。",
+    text: "金融量化算法先生成底稿，把证据交给后续质询。",
     startMs: 13600,
     endMs: 20200,
     timestampMs: null,
@@ -111,7 +111,7 @@ const captions: Caption[] = [
     confidence: null,
   },
   {
-    text: "数据质量先过关：时间、缺口、异常和延迟风险都会被检查。",
+    text: "证据质量先确认：时间、缺口、异常和延迟风险都会被检查。",
     startMs: 26400,
     endMs: 31200,
     timestampMs: null,
@@ -139,7 +139,7 @@ const captions: Caption[] = [
     confidence: null,
   },
   {
-    text: "君宇·投研智能体：看见一份股票研究结论如何诞生。",
+    text: "君宇·投研智能体：输入一只股票，得到一份专业研究报告。",
     startMs: 53600,
     endMs: 60000,
     timestampMs: null,
@@ -148,16 +148,16 @@ const captions: Caption[] = [
 ];
 
 const quantFactors = [
-  { label: "趋势", value: 84, color: palette.red },
-  { label: "动量", value: 78, color: palette.red },
+  { label: "趋势", value: 84, color: palette.green },
+  { label: "动量", value: 78, color: palette.teal },
   { label: "波动", value: 61, color: palette.gold },
   { label: "量价", value: 72, color: palette.teal },
-  { label: "风险", value: 38, color: palette.green },
+  { label: "风险", value: 38, color: palette.red },
   { label: "信息完整", value: 91, color: palette.teal },
 ];
 
 const evidenceNodes = [
-  ["实时行情", "行情", palette.red],
+  ["实时行情", "行情", palette.teal],
   ["财报因子", "财报", palette.gold],
   ["公告事件", "公告", palette.blue],
   ["新闻情绪", "舆情", palette.orange],
@@ -210,11 +210,11 @@ const currentCaption = (frame: number) => {
 
 const Soundtrack = () => (
   <Audio
-    src={staticFile("audio/cyber-pulse.wav")}
+    src={staticFile("audio/institutional-ambient.wav")}
     volume={(frame) => {
-      const fadeIn = linear(frame, [0, s(1.4)], [0, 0.74]);
-      const fadeOut = linear(frame, [DURATION - s(2), DURATION], [0.74, 0]);
-      const pulse = 0.92 + Math.sin(frame / 8) * 0.08;
+      const fadeIn = linear(frame, [0, s(2.2)], [0, 0.46]);
+      const fadeOut = linear(frame, [DURATION - s(3), DURATION], [0.46, 0]);
+      const pulse = 0.94 + Math.sin(frame / 34) * 0.06;
       return Math.min(fadeIn, fadeOut) * pulse;
     }}
   />
@@ -617,12 +617,12 @@ const HookScene = ({ format, local }: { format: PromoFormat; local: number }) =>
         <Title format={format} maxWidth={portrait ? undefined : 870}>
           输入一只股票
           <br />
-          看见研究结论
+          得到一份
           <br />
-          如何诞生
+          专业研究报告
         </Title>
         <Body format={format} maxWidth={portrait ? undefined : 830}>
-          从行情与因子到底稿，从专家质询到报告生成，把“凭感觉看股票”变成可追溯的研究流程。
+          从量化底稿到证据链，再到金融专家推演，把研究判断变成可复核、可跟踪的专业报告。
         </Body>
       </div>
       <div
@@ -647,9 +647,9 @@ const LiveKernel = ({ compact = false }: { compact?: boolean }) => {
   const frame = useCurrentFrame();
   const pulse = 0.72 + Math.sin(frame / 10) * 0.12;
   const items = [
-    ["1", "金融量化算法先出底稿"],
-    ["2", "沪深港股信息整理成证据链"],
-    ["3", "输出可读的专业研究报告"],
+    ["1", "先判断是否值得研究"],
+    ["2", "把依据整理成证据链"],
+    ["3", "给出可跟踪的研究结论"],
   ];
 
   return (
@@ -667,7 +667,7 @@ const LiveKernel = ({ compact = false }: { compact?: boolean }) => {
         <div>
           <div style={{ color: palette.dim, fontSize: compact ? 21 : 20, fontWeight: 800 }}>核心优势</div>
           <div style={{ color: palette.text, fontSize: compact ? 33 : 34, fontWeight: 980, marginTop: 6 }}>
-            从数据到结论的实时引擎
+            人工智能量化系统能帮你什么
           </div>
         </div>
         <PulseSvg size={compact ? 72 : 86} />
@@ -809,7 +809,7 @@ const ProblemScene = ({ format, local }: { format: PromoFormat; local: number })
 
 const LockScene = ({ format, local }: { format: PromoFormat; local: number }) => {
   const { portrait, pad, width } = useLayout(format);
-  const targetLabel = "五一视界 / 06651.HK";
+  const targetLabel = "五一视界 / 06651";
   const inputProgress = Math.floor(clamp(local - 18, [0, 54], [0, targetLabel.length]));
   const typed = targetLabel.slice(0, inputProgress);
   const lock = clamp(local - 76, [0, 22], [0, 1]);
@@ -885,7 +885,7 @@ const LockScene = ({ format, local }: { format: PromoFormat; local: number }) =>
           <div>
             <div style={{ color: palette.teal, fontSize: portrait ? 21 : 20, fontWeight: 900 }}>标的已锁定</div>
             <div style={{ color: palette.text, fontSize: portrait ? 35 : 34, fontWeight: 990, marginTop: 8 }}>五一视界</div>
-            <div style={{ color: palette.muted, fontSize: portrait ? 24 : 22, fontWeight: 760, marginTop: 5 }}>港股代码 06651.HK</div>
+            <div style={{ color: palette.muted, fontSize: portrait ? 24 : 22, fontWeight: 760, marginTop: 5 }}>港股代码 06651</div>
           </div>
           {!portrait ? <PulseSvg size={width > 1600 ? 90 : 76} /> : <Pill>进入模型</Pill>}
         </div>
@@ -934,7 +934,7 @@ const QuantScene = ({ format, local }: { format: PromoFormat; local: number }) =
           <br />
           讨论才有证据
         </Title>
-        <Body format={format}>趋势、动量、波动、量价与风险会先被量化，结论必须接受后续质询。</Body>
+        <Body format={format}>趋势、动量、波动、量价、风险和相对强弱会先被量化，结论必须接受后续质询。</Body>
       </div>
       <QuantEngine local={local} portrait={portrait} />
     </div>
@@ -1161,13 +1161,13 @@ const QualityScene = ({ format, local }: { format: PromoFormat; local: number })
       }}
     >
       <div style={{ display: "grid", gap: 22 }}>
-        <Kicker>数据质量门禁</Kicker>
+        <Kicker>证据质量校验</Kicker>
         <Title format={format} small>
-          数据先过关
+          证据先确认
           <br />
-          模型再发言
+          再进入推演
         </Title>
-        <Body format={format}>每一份底稿先通过数据质量门禁，再进入金融专家团队讨论。</Body>
+        <Body format={format}>时间、缺口、延迟和未来函数风险先被系统核验，避免讨论建立在错误底稿上。</Body>
       </div>
       <div style={{ display: "grid", gap: portrait ? 18 : 20 }}>
         {gates.map(([title, desc, color], index) => {
@@ -1489,7 +1489,8 @@ const MiniChart = ({ local }: { local: number }) => {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, alignItems: "end", height: 210 }}>
         {bars.map((bar, index) => {
           const height = clamp(local - index * 8, [0, 36], [0, bar]);
-          const color = index < 2 ? palette.red : index === 2 ? palette.gold : palette.green;
+          const colors = [palette.green, palette.teal, palette.gold, palette.red, palette.teal];
+          const color = colors[index] ?? palette.teal;
           return (
             <div key={index} style={{ display: "grid", alignItems: "end", height: "100%", background: "rgba(255,255,255,0.74)", borderRadius: 12, padding: 9 }}>
               <div style={{ height: `${height}%`, borderRadius: 10, background: color }} />
@@ -1594,11 +1595,11 @@ const FinaleScene = ({ format, local }: { format: PromoFormat; local: number }) 
           君宇·投研智能体
         </div>
         <Title format={format} maxWidth={portrait ? undefined : 1050}>
-          看见一份
+          输入一只股票
           <br />
-          股票研究结论
+          得到一份
           <br />
-          如何诞生
+          专业研究报告
         </Title>
         <div
           style={{
@@ -1616,7 +1617,7 @@ const FinaleScene = ({ format, local }: { format: PromoFormat; local: number }) 
             boxShadow: "0 0 70px rgba(143,255,229,0.25)",
           }}
         >
-          量化底稿 <span style={{ color: palette.dim }}>｜</span> 证据链路 <span style={{ color: palette.dim }}>｜</span> 金融专家推演
+          量化底稿 <span style={{ color: palette.dim }}>｜</span> 可信证据链 <span style={{ color: palette.dim }}>｜</span> 专业研究报告
         </div>
       </div>
       <div

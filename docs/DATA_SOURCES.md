@@ -193,7 +193,7 @@ Reports should use primary and secondary data for strong claims. Fallback and ex
 
 ## Current QuantBrief Data Quality Checks
 
-`junyu-quant-brief-v3.3` must score data quality before forming a research direction.
+`junyu-quant-brief-v4.0-dsa` must score data quality before forming a research direction.
 
 Current checks:
 
@@ -211,6 +211,7 @@ Current checks:
 - Cross-section coverage: market breadth, liquidity, crowding, and RPS availability must be shown separately.
 - Quant safety validation: future-function, fact availability, latency, timestamp, IC/IR, layered backtest, rolling-window, and industry-neutral readiness checks must be present.
 - Factor result contract: trend, momentum, volatility, volume-price, cross-section, fundamental, event, validation, risk, and data-quality factors must bind to evidence ledger keys and quality check keys.
+- Decision signal contract: action, price plan, watch conditions, invalidation conditions, catalysts, and lifecycle status must be generated from the scored evidence layer, not from one raw quote or one agent sentence.
 
 Hard failures must lower data quality and can force `数据待确认`. Warnings can still allow a report, but the report must show the quality limitation.
 

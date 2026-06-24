@@ -162,6 +162,7 @@ export function HomeExperience() {
   const [depth, setDepth] = useState<Depth>("标准");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shouldLoadVideo, setShouldLoadVideo] = useState(false);
   const hasSearchQuery = symbolQuery.trim().length > 0;
   const marketHint =
     market === "港股"
@@ -244,6 +245,31 @@ export function HomeExperience() {
       window.removeEventListener("load", handleLoad);
     };
   }, []);
+
+  useEffect(() => {
+    if (shouldLoadVideo) return;
+    const target = document.getElementById("video");
+    if (!target) return;
+    if (!("IntersectionObserver" in window)) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoadVideo(true);
+          observer.disconnect();
+        }
+      },
+      {
+        rootMargin: "720px 0px",
+        threshold: 0.01,
+      },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [shouldLoadVideo]);
 
   useEffect(() => {
     const desktopQuery = window.matchMedia(homeSnapBreakpoint);
@@ -411,6 +437,7 @@ export function HomeExperience() {
               <div className="mt-5 flex flex-wrap gap-3 md:mt-8">
                 <a
                   href="#video"
+                  onClick={() => setShouldLoadVideo(true)}
                   className="inline-flex items-center gap-2 rounded-lg bg-teal-200 px-5 py-2.5 text-sm font-semibold text-neutral-950 shadow-[0_0_28px_rgba(94,234,212,0.38)] transition hover:bg-white md:py-3"
                 >
                   {homeCopy.heroPrimaryCta}
@@ -419,7 +446,7 @@ export function HomeExperience() {
               </div>
             </div>
 
-            <div className="mobile-hero-advantage-card rounded-lg border border-white/14 bg-black/32 p-3 backdrop-blur-sm md:p-5">
+            <div className="mobile-hero-advantage-card rounded-xl border border-teal-100/18 bg-black/38 p-3 shadow-[0_22px_80px_rgba(0,0,0,0.35)] backdrop-blur-sm md:p-5">
               <div className="flex items-center justify-between border-b border-white/12 pb-3 md:pb-4">
                 <div>
                   <div className="text-xs text-white/58 md:text-sm">{homeCopy.heroAdvantageKicker}</div>
@@ -433,7 +460,7 @@ export function HomeExperience() {
                 {homeCopy.heroAdvantageItems.map((item, index) => (
                   <div
                     key={item.title}
-                    className="flex items-center gap-3 rounded-lg border border-white/12 bg-white/[0.06] p-2.5 md:p-3"
+                    className="flex items-center gap-3 rounded-lg border border-white/12 bg-white/[0.07] p-2.5 md:p-3"
                   >
                     <div className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-300/18 text-sm text-teal-100">
                       {index + 1}
@@ -444,6 +471,16 @@ export function HomeExperience() {
                         {item.body}
                       </div>
                     </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/10 pt-3 md:mt-5 md:pt-4">
+                {homeCopy.heroProofItems.map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-lg border border-teal-100/14 bg-teal-300/10 px-2.5 py-2 text-center text-xs font-semibold text-teal-50"
+                  >
+                    {item}
                   </div>
                 ))}
               </div>
@@ -488,7 +525,7 @@ export function HomeExperience() {
               </div>
 
               <a
-                href="#process"
+                href="#research-task"
                 className="mt-7 inline-flex items-center gap-2 rounded-lg bg-teal-200 px-5 py-3 text-sm font-semibold text-neutral-950 shadow-[0_0_28px_rgba(94,234,212,0.28)] transition hover:bg-white"
               >
                 {homeCopy.video.cta}
@@ -501,10 +538,12 @@ export function HomeExperience() {
                 className="aspect-video w-full rounded-lg bg-black object-cover"
                 controls
                 playsInline
-                preload="metadata"
+                preload="none"
                 poster={homeCopy.video.desktopPoster}
-                src={homeCopy.video.desktopSource}
               >
+                {shouldLoadVideo ? (
+                  <source src={homeCopy.video.desktopSource} type="video/mp4" />
+                ) : null}
                 当前浏览器暂不支持视频播放。
               </video>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-xs text-white/66">
@@ -651,153 +690,156 @@ export function HomeExperience() {
         </div>
       </section>
 
-      <section id="committee-preview" className="home-page bg-[var(--bg-soft)]">
+      <section id="committee-preview" className="home-page bg-[#071313] text-white">
         <div className="home-page-panel">
-          <div className="mobile-committee-preview container-shell flex h-[100dvh] items-stretch py-4 md:py-5">
-            <div className="grid h-full w-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-              <div className="mobile-committee-dialogue flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-white p-5 md:p-6">
-                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--line)] pb-4">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-sm font-medium text-[var(--teal-strong)]">
-                      <MessageSquareText size={16} />
-                      {homeCopy.committeePreview.badge}
-                    </div>
-                    <h2 className="mt-3 max-w-[720px] text-[24px] font-semibold leading-tight tracking-normal md:text-[32px]">
-                      {homeCopy.committeePreview.title}
-                    </h2>
-                    <p className="mt-2 max-w-[680px] text-sm leading-6 text-[var(--ink-muted)]">
-                      {homeCopy.committeePreview.body}
-                    </p>
+          <div className="container-shell flex h-[100dvh] items-stretch py-5">
+            <div className="grid h-full w-full min-h-0 gap-4 lg:grid-cols-[0.58fr_1.42fr]">
+              <aside className="flex min-h-0 flex-col justify-between overflow-hidden rounded-lg border border-white/12 bg-white/[0.06] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-teal-200/35 bg-teal-300/14 px-3 py-1.5 text-sm font-medium text-teal-50">
+                    <MessageSquareText size={16} />
+                    {homeCopy.committeePreview.badge}
                   </div>
-                  <span className="rounded-full bg-[var(--bg-soft)] px-3 py-1.5 text-xs font-medium text-[var(--ink-muted)]">
-                    {homeCopy.committeePreview.statusLabel}
-                  </span>
+                  <h2 className="mt-5 text-[34px] font-semibold leading-[1.12] tracking-normal [text-wrap:balance]">
+                    {homeCopy.committeePreview.title}
+                  </h2>
+                  <p className="mt-4 text-base leading-7 text-white/72">
+                    {homeCopy.committeePreview.body}
+                  </p>
                 </div>
 
-                <div className="mt-3 grid min-h-0 flex-1 content-start gap-1.5">
-                  {committeePreviewEvents.map((event, index) => (
-                    <article
-                      key={event.role}
-                      className={`rounded-lg border px-3 py-2 ${
-                        event.tone === "bull"
-                          ? "border-red-100 bg-red-50/65"
-                          : event.tone === "bear"
-                            ? "border-emerald-100 bg-emerald-50/70"
-                            : event.tone === "risk"
-                              ? "border-amber-100 bg-amber-50/70"
-                              : "border-[var(--line)] bg-[var(--surface)]"
-                      }`}
-                    >
-                      <div className="flex min-w-0 gap-2.5">
-                        <RolePortrait active={isThinkingEvent(event)} role={event.role} size="normal" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center justify-between gap-1.5">
-                            <div className="min-w-0">
-                              <div className="truncate text-base font-semibold text-[var(--ink)]">
-                                {event.role}
-                              </div>
-                              <div className="mt-0.5 text-xs text-[var(--ink-soft)]">{event.duty}</div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[var(--ink-muted)]">
-                                第 {index + 1} 轮
-                              </span>
-                              {isThinkingEvent(event) ? (
-                                <span className="inline-flex items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-[var(--teal-strong)]">
-                                  思考中
-                                  <span className="inline-flex w-4 justify-start" aria-hidden="true">
-                                    <span className="animate-pulse">...</span>
-                                  </span>
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <p className="mt-1.5 text-sm leading-5 text-[var(--ink-muted)]">{event.content}</p>
-                        </div>
+                <div className="mt-5 rounded-lg border border-teal-100/16 bg-black/28 p-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-teal-100">
+                    <Target size={16} />
+                    {homeCopy.committeePreview.proofTitle}
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {homeCopy.committeePreview.proofItems.map((item) => (
+                      <div key={item} className="flex items-center gap-2 rounded-md bg-white/[0.06] px-3 py-2 text-sm text-white/82">
+                        <CheckCircle2 size={15} className="shrink-0 text-teal-200" />
+                        <span>{item}</span>
                       </div>
-                    </article>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mobile-report-preview-grid grid h-full min-h-0 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-                <div className="mobile-report-chart-card flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-white p-5 md:p-6">
-                  <div className="flex items-center gap-2 text-base font-semibold text-[var(--teal-strong)]">
-                    <BarChart3 size={18} />
-                    报告图表预览
+                    ))}
                   </div>
-                  <h3 className="mt-3 text-[22px] font-semibold leading-tight">
-                    {homeCopy.reportPreview.title}
-                  </h3>
-                  <div className="mt-5 rounded-lg bg-[var(--bg-soft)] p-4">
-                    <div className="flex items-end justify-between gap-3">
-                      {homeCopy.reportPreview.chartMetrics.map((metric) => (
-                        <div key={metric.label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                          <div className="flex h-28 w-full items-end rounded-md bg-white px-2 pb-2">
-                            <div
-                              className="w-full rounded-sm"
-                              style={{ height: metric.height, backgroundColor: metric.color }}
-                            />
+                </div>
+
+                <a
+                  href="#research-task"
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-lg bg-teal-200 px-5 py-3 text-sm font-semibold text-neutral-950 shadow-[0_0_28px_rgba(94,234,212,0.24)] transition hover:bg-white"
+                >
+                  输入标的开始分析
+                  <ArrowDown size={15} />
+                </a>
+              </aside>
+
+              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[1.18fr_0.82fr]">
+                <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-white p-5 text-[var(--ink)] md:p-6">
+                  <div className="flex items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--teal-strong)]">会议纪要实时留痕</div>
+                      <h3 className="mt-1 text-[28px] font-semibold leading-tight tracking-normal">
+                        同一份底稿，逐条质询和修正。
+                      </h3>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-semibold text-[var(--teal-strong)]">
+                      {homeCopy.committeePreview.statusLabel}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid min-h-0 flex-1 content-start gap-2">
+                    {committeePreviewEvents.map((event, index) => (
+                      <article
+                        key={event.role}
+                        className={`rounded-lg border px-3 py-2.5 ${
+                          event.tone === "bull"
+                            ? "border-red-100 bg-red-50/70"
+                            : event.tone === "bear"
+                              ? "border-emerald-100 bg-emerald-50/80"
+                              : event.tone === "risk"
+                                ? "border-amber-100 bg-amber-50/75"
+                                : "border-[var(--line)] bg-[var(--surface)]"
+                        }`}
+                      >
+                        <div className="flex min-w-0 gap-3">
+                          <RolePortrait active={isThinkingEvent(event)} role={event.role} size="normal" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-base font-semibold text-[var(--ink)]">
+                                  {event.role}
+                                </div>
+                                <div className="mt-0.5 text-xs text-[var(--ink-soft)]">{event.duty}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[var(--ink-muted)]">
+                                  第 {index + 1} 轮
+                                </span>
+                                {isThinkingEvent(event) ? (
+                                  <span className="inline-flex items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-[var(--teal-strong)]">
+                                    思考中
+                                    <span className="inline-flex w-4 justify-start" aria-hidden="true">
+                                      <span className="animate-pulse">...</span>
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <p className="mt-1.5 text-sm leading-5 text-[var(--ink-muted)]">{event.content}</p>
                           </div>
-                          <div className="text-xs font-medium text-[var(--ink)]">{metric.label}</div>
-                          <div className="text-xs text-[var(--ink-soft)]">{metric.value}</div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid h-full min-h-0 gap-4">
+                  <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-teal-100/18 bg-white/[0.08] p-5">
+                    <div className="flex items-center gap-2 text-base font-semibold text-teal-100">
+                      <BarChart3 size={18} />
+                      报告图表预览
+                    </div>
+                    <h3 className="mt-3 text-[22px] font-semibold leading-tight">
+                      {homeCopy.reportPreview.title}
+                    </h3>
+                    <div className="mt-4 rounded-lg border border-white/10 bg-black/24 p-4">
+                      <div className="flex items-end justify-between gap-3">
+                        {homeCopy.reportPreview.chartMetrics.map((metric) => (
+                          <div key={metric.label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                            <div className="flex h-24 w-full items-end rounded-md bg-white/88 px-2 pb-2">
+                              <div
+                                className="w-full rounded-sm"
+                                style={{ height: metric.height, backgroundColor: metric.color }}
+                              />
+                            </div>
+                            <div className="text-xs font-medium text-white/88">{metric.label}</div>
+                            <div className="text-xs text-white/58">{metric.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex min-h-0 flex-col rounded-lg border border-teal-100/18 bg-white/[0.08] p-5">
+                    <div className="flex items-center gap-2 text-base font-semibold text-teal-100">
+                      <FileText size={18} />
+                      {homeCopy.reportPreview.badge}
+                    </div>
+                    <h3 className="mt-3 text-[22px] font-semibold leading-snug">
+                      {homeCopy.reportPreview.finalTitleLines.map((line) => (
+                        <span key={line} className="block">
+                          {line}
+                        </span>
+                      ))}
+                    </h3>
+                    <div className="mt-4 grid gap-2 text-sm text-white/78">
+                      {homeCopy.reportPreview.includes.slice(0, 4).map((item) => (
+                        <div key={item} className="flex items-center gap-2 rounded-md bg-white/[0.06] px-3 py-2">
+                          <CheckCircle2 size={14} className="text-teal-100" />
+                          <span>{item}</span>
                         </div>
                       ))}
                     </div>
                   </div>
-                  <div className="mt-4 grid gap-2 overflow-y-auto pr-1 text-sm">
-                    {["量化信号", "多空分歧", "信息完整指数", "风险边界"].map((item) => (
-                      <div
-                        key={item}
-                        className="flex items-center justify-between rounded-md border border-[var(--line)] px-3 py-2"
-                      >
-                        <span className="font-medium">{item}</span>
-                        <CheckCircle2 size={15} className="text-[var(--teal-strong)]" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mobile-final-report-card flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--ink)] p-5 text-white md:p-6">
-                  <div className="flex items-center gap-2 text-base font-semibold text-teal-100">
-                    <FileText size={18} />
-                    {homeCopy.reportPreview.badge}
-                  </div>
-                  <h3 className="zh-keep-phrase mt-3 text-[22px] font-semibold leading-snug">
-                    {homeCopy.reportPreview.finalTitleLines.map((line) => (
-                      <span key={line} className="block">
-                        {line}
-                      </span>
-                    ))}
-                  </h3>
-                  <div className="mt-5 min-h-0 space-y-3 overflow-y-auto pr-1 text-sm leading-6 text-white/72">
-                    <p>
-                      {homeCopy.reportPreview.body}
-                    </p>
-                    <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3">
-                      <div className="text-sm font-semibold text-teal-100">报告会包含</div>
-                      <div className="mt-2 grid gap-2">
-                        {homeCopy.reportPreview.includes.map(
-                          (item) => (
-                            <div key={item} className="flex items-center gap-2">
-                              <CheckCircle2 size={14} className="text-teal-100" />
-                              <span>{item}</span>
-                            </div>
-                          ),
-                        )}
-                      </div>
-                      <p className="mt-3 border-t border-white/10 pt-2 text-xs leading-5 text-white/55">
-                        附注保留合规提示，不打断报告主体阅读。
-                      </p>
-                    </div>
-                  </div>
-                  <a
-                    href="#research-task"
-                    className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg bg-teal-200 px-5 py-3 text-sm font-semibold text-neutral-950 transition hover:bg-white"
-                  >
-                    输入标的开始分析
-                    <ArrowDown size={15} />
-                  </a>
                 </div>
               </div>
             </div>

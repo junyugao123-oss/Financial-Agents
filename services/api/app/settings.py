@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     enable_scheduler: bool = True
     data_sync_cron: str = "5 0 * * *"
     app_timezone: str = "Asia/Shanghai"
-    event_pacing_seconds: float = 7.0
+    event_pacing_seconds: float = 3.0
 
     model_provider: str = "deepseek"
     model_name: str = "deepseek-v4-pro"

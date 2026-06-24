@@ -185,6 +185,24 @@ export interface ValidationCheck {
   detail: string;
 }
 
+export interface DecisionSignalPlan {
+  action: "买入观察" | "持有观察" | "观望观察" | "减仓观察" | "风险回避";
+  horizon: "短线" | "中线" | "中长期" | "观察";
+  score: number;
+  confidence: number;
+  market_phase: string;
+  plan_quality: "高" | "中" | "低";
+  reason: string;
+  price_plan: string[];
+  risk_controls: string[];
+  watch_conditions: string[];
+  invalidation_conditions: string[];
+  catalysts: string[];
+  evidence_keys: string[];
+  data_quality_summary: string;
+  lifecycle_status: "active" | "watch" | "blocked";
+}
+
 export interface QuantBrief {
   market: Market;
   symbol: string;
@@ -204,6 +222,7 @@ export interface QuantBrief {
   risk_score: number;
   evidence_score: number;
   signal_label: "偏多观察" | "中性观察" | "偏空观察" | "数据待确认";
+  decision_signal?: DecisionSignalPlan | null;
   data_quality_checks: DataQualityCheck[];
   indicators: QuantIndicator[];
   facts: string[];

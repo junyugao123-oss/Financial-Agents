@@ -135,6 +135,7 @@ export function MobileLanding() {
   const [depth, setDepth] = useState<Depth>("标准");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shouldLoadVideo, setShouldLoadVideo] = useState(false);
   const hasSearchQuery = symbolQuery.trim().length > 0;
   const marketHint =
     market === "港股"
@@ -166,6 +167,31 @@ export function MobileLanding() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (shouldLoadVideo) return;
+    const target = document.getElementById("video");
+    if (!target) return;
+    if (!("IntersectionObserver" in window)) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoadVideo(true);
+          observer.disconnect();
+        }
+      },
+      {
+        rootMargin: "520px 0px",
+        threshold: 0.01,
+      },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [shouldLoadVideo]);
 
   useEffect(() => {
     const query = symbolQuery.trim();
@@ -263,11 +289,11 @@ export function MobileLanding() {
   }
 
   return (
-    <main className="relative h-[100dvh] w-full snap-y snap-mandatory overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth bg-[#050706] text-white [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <main className="mobile-landing-root relative h-[100dvh] w-full snap-y snap-mandatory overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth bg-[#050706] text-white [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <MobileLegalNotice />
       <section
         id="start"
-        className="relative h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden px-4 pb-[calc(env(safe-area-inset-bottom)+76px)] pt-5"
+        className="mobile-landing-section relative h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden px-4 pb-[calc(env(safe-area-inset-bottom)+76px)] pt-5"
         style={{
           backgroundImage:
             "linear-gradient(180deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.88) 45%, rgba(0,0,0,0.96) 100%), url('/images/decision-room-hero.png')",
@@ -286,16 +312,17 @@ export function MobileLanding() {
               <BadgeCheck size={17} />
               {homeCopy.heroBadge}
             </div>
-            <h1 className="mt-5 text-[28px] font-semibold leading-[1.18] tracking-normal [text-wrap:balance]">
+            <h1 className="mobile-hero-title mt-5 text-[28px] font-semibold leading-[1.18] tracking-normal [text-wrap:balance]">
               {homeCopy.heroMobileTitle}
             </h1>
-            <p className="mt-4 text-sm leading-7 text-white/76">
+            <p className="mobile-landing-hero-copy mt-4 text-sm leading-7 text-white/76">
               {homeCopy.heroDescription}
             </p>
             <a
               href="#video"
               onClick={(event) => {
                 event.preventDefault();
+                setShouldLoadVideo(true);
                 goToSection("video");
               }}
               className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-teal-200 px-5 py-3 text-sm font-semibold text-neutral-950 shadow-[0_0_28px_rgba(94,234,212,0.38)] transition hover:bg-white"
@@ -305,11 +332,14 @@ export function MobileLanding() {
             </a>
           </div>
 
-          <div className="grid w-full grid-cols-3 gap-2">
-            {homeCopy.heroProofItems.map((item) => (
-              <div key={item} className="rounded-lg border border-white/12 bg-white/[0.06] px-2.5 py-3">
-                <CheckCircle2 className="mb-2 text-teal-200" size={16} />
-                <div className="text-xs font-semibold leading-snug text-white/78">{item}</div>
+          <div className="grid w-full gap-2">
+            {homeCopy.topFeaturePills.map((item) => (
+              <div
+                key={item}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-teal-200/24 bg-white/[0.06] px-3 py-2 text-xs font-semibold leading-snug text-white/80"
+              >
+                <CheckCircle2 className="shrink-0 text-teal-200" size={15} />
+                <span>{item}</span>
               </div>
             ))}
           </div>
@@ -318,7 +348,7 @@ export function MobileLanding() {
 
       <section
         id="video"
-        className="h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#050706] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
+        className="mobile-landing-section h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#050706] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
       >
         <div className="flex h-full w-full flex-col justify-between gap-3">
           <div>
@@ -339,10 +369,12 @@ export function MobileLanding() {
               className="h-[36dvh] w-full rounded-lg bg-black object-cover"
               controls
               playsInline
-              preload="metadata"
+              preload="none"
               poster={homeCopy.video.mobilePoster}
-              src={homeCopy.video.mobileSource}
             >
+              {shouldLoadVideo ? (
+                <source src={homeCopy.video.mobileSource} type="video/mp4" />
+              ) : null}
               当前浏览器暂不支持视频播放。
             </video>
           </div>
@@ -357,10 +389,10 @@ export function MobileLanding() {
           </div>
 
           <a
-            href="#process"
+            href="#research-task"
             onClick={(event) => {
               event.preventDefault();
-              goToSection("process");
+              goToSection("research-task");
             }}
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-teal-200 px-5 py-3 text-sm font-semibold text-neutral-950"
           >
@@ -372,7 +404,7 @@ export function MobileLanding() {
 
       <section
         id="process"
-        className="h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#071010] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
+        className="mobile-landing-section h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#071010] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
       >
         <div className="flex h-full w-full flex-col justify-between gap-3">
           <div>
@@ -423,7 +455,7 @@ export function MobileLanding() {
 
       <section
         id="data-hub"
-        className="h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#081313] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
+        className="mobile-landing-section h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#081313] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
       >
         <div className="flex h-full w-full flex-col justify-between gap-3">
           <div>
@@ -471,20 +503,30 @@ export function MobileLanding() {
 
       <section
         id="committee-preview"
-        className="h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#f3f7f7] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-[#101a1f]"
+        className="mobile-landing-section h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#081313] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
       >
         <div className="flex h-full w-full flex-col justify-between gap-2">
           <div>
-            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[#e9fbf7] px-3 py-1.5 text-xs font-semibold text-[#075a53]">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-teal-200/30 bg-teal-300/14 px-3 py-1.5 text-xs font-semibold text-teal-50">
               <MessageSquareText size={16} />
               {homeCopy.committeePreview.badge}
             </div>
             <h2 className="mt-3 text-[1.35rem] font-semibold leading-tight [text-wrap:balance]">
               {homeCopy.committeePreview.title}
             </h2>
-            <p className="mt-1.5 text-xs leading-5 text-[#52636c]">
+            <p className="mt-1.5 text-xs leading-5 text-white/68">
               {homeCopy.committeePreview.body}
             </p>
+            <div className="mt-2 grid grid-cols-3 gap-1.5">
+              {homeCopy.committeePreview.proofItems.map((item) => (
+                <div
+                  key={item}
+                  className="rounded-lg border border-white/10 bg-white/[0.06] px-2 py-2 text-center text-[11px] font-semibold text-teal-100"
+                >
+                  {item}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="flex w-full flex-col gap-1.5">
@@ -493,10 +535,10 @@ export function MobileLanding() {
                 key={event.role}
                 className={`w-full rounded-lg border p-1.5 ${
                   event.tone === "bull"
-                    ? "border-red-100 bg-red-50/80"
+                    ? "border-red-200/60 bg-red-50"
                     : event.tone === "bear"
-                      ? "border-emerald-100 bg-emerald-50/80"
-                      : "border-[#c7d6dc] bg-white"
+                      ? "border-emerald-200/60 bg-emerald-50"
+                      : "border-white/12 bg-white"
                 }`}
               >
                 <div className="flex w-full gap-2.5">
@@ -504,7 +546,7 @@ export function MobileLanding() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <h3 className="text-sm font-semibold leading-snug">{event.role}</h3>
+                        <h3 className="text-sm font-semibold leading-snug text-[#101a1f]">{event.role}</h3>
                         <div className="mt-0.5 text-xs text-[#6a7d86]">{event.duty}</div>
                       </div>
                       <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] text-[#52636c]">
@@ -520,15 +562,15 @@ export function MobileLanding() {
             ))}
           </div>
 
-          <div className="rounded-lg border border-dashed border-[#b6ccd3] bg-white/70 p-2">
+          <div className="rounded-lg border border-dashed border-teal-100/30 bg-white/[0.06] p-2">
             <div className="flex items-center gap-3">
               <RolePortrait active role={thinkingEvent.role} size="micro" />
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-[#075a53]">
+                <div className="text-sm font-semibold text-teal-100">
                   下一位：{thinkingEvent.role}
                   <span className="ml-1 inline-flex animate-pulse">思考中...</span>
                 </div>
-                <p className="mt-0.5 text-xs leading-5 text-[#52636c]">
+                <p className="mt-0.5 text-xs leading-5 text-white/66">
                   {thinkingEvent.content}
                 </p>
               </div>
@@ -551,7 +593,7 @@ export function MobileLanding() {
 
       <section
         id="report-preview"
-        className="h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#081313] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
+        className="mobile-landing-section h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-hidden bg-[#081313] px-4 pb-[calc(env(safe-area-inset-bottom)+68px)] pt-5 text-white"
       >
         <div className="flex h-full w-full flex-col justify-between gap-3">
           <div>
@@ -607,27 +649,30 @@ export function MobileLanding() {
         </div>
       </section>
 
-      <section id="research-task" className="h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-y-auto bg-[#f8fbfb] px-4 pb-[calc(env(safe-area-inset-bottom)+76px)] pt-6 text-[#101a1f] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex min-h-full w-full flex-col justify-center">
-          <div className="w-full">
+      <section
+        id="research-task"
+        className="mobile-landing-section mobile-landing-local-scroll mobile-research-section h-[100dvh] min-h-[100svh] w-full snap-start snap-always overflow-y-auto bg-[#f8fbfb] px-4 pb-[calc(env(safe-area-inset-bottom)+70px)] pt-4 text-[#101a1f] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <div className="mobile-research-content flex min-h-full w-full flex-col justify-start py-2">
+          <div className="mobile-research-intro w-full">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#c7d6dc] bg-white px-3 py-1.5 text-xs text-[#52636c]">
               {homeCopy.researchTask.badge}
             </div>
-            <h2 className="mt-4 text-2xl font-semibold leading-snug">
+            <h2 className="mt-3 text-[1.55rem] font-semibold leading-tight">
               {homeCopy.researchTask.title}
             </h2>
-            <p className="mt-3 text-sm leading-7 text-[#52636c]">
+            <p className="mt-2 text-sm leading-6 text-[#52636c]">
               {homeCopy.researchTask.body}
             </p>
           </div>
 
-          <form onSubmit={submit} className="mt-5 w-full rounded-lg border border-[#c7d6dc] bg-white p-4 shadow-sm">
-            <div className="border-b border-[#c7d6dc] pb-4">
+          <form onSubmit={submit} className="mobile-research-form mt-4 w-full rounded-lg border border-[#c7d6dc] bg-white p-3.5 shadow-sm">
+            <div className="border-b border-[#c7d6dc] pb-3">
               <h3 className="text-xl font-semibold">研究任务立项</h3>
               <p className="mt-1 text-sm text-[#52636c]">{homeCopy.researchTask.formDescription}</p>
             </div>
 
-            <div className="mt-4 flex w-full flex-col gap-4">
+            <div className="mt-3 flex w-full flex-col gap-3.5">
               <div>
                 <label className="text-sm font-semibold">市场</label>
                 <div className="mt-2 grid w-full grid-cols-2 gap-2 rounded-xl bg-[#eaf2f4] p-1">
@@ -679,7 +724,7 @@ export function MobileLanding() {
                       setIsSearchingStocks(nextQuery.trim().length > 0);
                     }}
                     className="w-full rounded-xl border-2 border-[#85e9d9] bg-[#f3fffc] py-3.5 pl-11 pr-3 text-base font-semibold text-[#101a1f] placeholder:text-[#52636c] focus:outline-none"
-                    placeholder={`输入公司名、简称或代码，如 ${marketHint.query} / ${marketHint.code}`}
+                    placeholder={`输入名称或代码，如 ${marketHint.code}`}
                   />
                 </div>
                 <div className="mt-2 flex w-full flex-wrap items-center gap-2 text-xs">
@@ -689,14 +734,7 @@ export function MobileLanding() {
                     onClick={() => lockMarketHintStock(market)}
                     className="rounded-full border border-[#85e9d9] bg-[#e9fbf7] px-3 py-1.5 font-semibold text-[#064f49]"
                   >
-                    {marketHint.title}：{marketHint.query}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => lockMarketHintStock(market)}
-                    className="rounded-full border border-[#85e9d9] bg-white px-3 py-1.5 font-semibold text-[#064f49]"
-                  >
-                    代码：{marketHint.code}
+                    {marketHint.title}：{marketHint.query} / {marketHint.code}
                   </button>
                 </div>
 
@@ -817,8 +855,8 @@ export function MobileLanding() {
 
 function MobileLegalNotice() {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-4 pb-[calc(env(safe-area-inset-bottom)+10px)]">
-      <div className="flex w-full items-start gap-2 rounded-t-lg border-t border-white/12 bg-black/[0.82] px-3 py-2 text-[11px] leading-5 text-white/72 backdrop-blur-md">
+    <div className="mobile-legal-notice pointer-events-none fixed inset-x-0 bottom-0 z-50 px-4 pb-[calc(env(safe-area-inset-bottom)+8px)]">
+      <div className="flex w-full items-start gap-2 rounded-lg border border-white/10 bg-black/[0.78] px-3 py-1.5 text-[10px] leading-4 text-white/72 shadow-[0_12px_32px_rgba(0,0,0,0.28)] backdrop-blur-md">
         <ShieldAlert className="mt-0.5 shrink-0" size={15} />
         <span>{homeCopy.legalNotice}</span>
       </div>

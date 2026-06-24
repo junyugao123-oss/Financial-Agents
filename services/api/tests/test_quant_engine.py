@@ -133,6 +133,15 @@ def test_build_quant_brief_from_history():
     assert any("证据账本" in fact for fact in brief.facts)
     assert any("因子底稿" in fact for fact in brief.facts)
     assert brief.validation_checks
+    assert brief.decision_signal is not None
+    assert brief.decision_signal.action in {"买入观察", "持有观察", "观望观察", "减仓观察", "风险回避"}
+    assert brief.decision_signal.score >= 0
+    assert brief.decision_signal.confidence >= 0
+    assert brief.decision_signal.price_plan
+    assert brief.decision_signal.watch_conditions
+    assert brief.decision_signal.invalidation_conditions
+    assert brief.decision_signal.risk_controls
+    assert brief.decision_signal.data_quality_summary
 
 
 def test_build_quant_brief_includes_fundamental_and_event_factor_layer():

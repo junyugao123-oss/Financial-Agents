@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from .models import (
+    DecisionSignalPlan,
     DecisionEvent,
     MarketSnapshot,
     QuantBrief,
@@ -28,10 +29,15 @@ def render_report(
     manager_decisions = [
         event for event in decision_events if event.role in ("组合经理", "投资经理", "基金经理")
     ]
+    decision_signal = quant_brief.decision_signal if quant_brief else None
 
-    rating = _rating_from_snapshot(snapshot, risk_points, quant_brief)
-    confidence = _confidence_from_events(events, risk_points, quant_brief)
-    action_label = _action_from_rating(rating, snapshot, quant_brief)
+    rating = (
+        _rating_from_decision_signal(decision_signal)
+        if decision_signal
+        else _rating_from_snapshot(snapshot, risk_points, quant_brief)
+    )
+    confidence = decision_signal.confidence if decision_signal else _confidence_from_events(events, risk_points, quant_brief)
+    action_label = decision_signal.action if decision_signal else _action_from_rating(rating, snapshot, quant_brief)
 
     sections = [
         ReportSection(
@@ -43,7 +49,7 @@ def render_report(
                 f"投委会动作口径为 {action_label}，信息完整指数 {confidence}/100。"
                 f"核心理由：{_summary_core_reason(snapshot, quant_brief)}"
                 f"主要风险：{_summary_primary_risk(quant_brief)}"
-                "下一步重点：继续跟踪成交活跃度、关键价格区间、公告与财务验证、风险读数变化。"
+                f"下一步重点：{_summary_next_step(decision_signal)}"
             ),
         ),
         ReportSection(
@@ -51,7 +57,7 @@ def render_report(
             title="最终买卖观察结论",
             status="ready",
             content=(
-                f"用户可读口径：{_action_plain_explanation(action_label)}"
+                f"用户可读口径：{_action_plain_explanation(action_label, decision_signal)}"
                 "该口径代表当前研究跟踪动作，不构成任何买卖指令、财务建议、投资建议或交易建议。"
             ),
         ),
@@ -160,6 +166,20 @@ def _rating_from_snapshot(
     return "中性观察"
 
 
+def _rating_from_decision_signal(decision: DecisionSignalPlan | None) -> str:
+    if decision is None:
+        return "中性观察"
+    if decision.action == "买入观察":
+        return "积极观察"
+    if decision.action == "持有观察":
+        return "持有观察"
+    if decision.action == "减仓观察":
+        return "审慎观察"
+    if decision.action == "风险回避":
+        return "风险观察"
+    return "中性观察"
+
+
 def _confidence_from_events(
     events: list[DecisionEvent],
     risk_points: list[str],
@@ -203,6 +223,8 @@ def _summary_core_reason(snapshot: MarketSnapshot, quant_brief: QuantBrief | Non
             f"{snapshot.name} 已完成行情事实记录，但量化因子尚未形成完整底稿，"
             "结论以谨慎观察为主。"
         )
+    if quant_brief.decision_signal:
+        return f"{quant_brief.decision_signal.reason}"
     return (
         f"量化模型给出 {quant_brief.signal_label}，趋势 {quant_brief.trend_score}/100，"
         f"动量 {quant_brief.momentum_score}/100，量价 {quant_brief.volume_score}/100，"
@@ -220,7 +242,15 @@ def _summary_primary_risk(quant_brief: QuantBrief | None) -> str:
     return "主要风险在于量价信号能否被基本面、公告和行业事实继续验证。"
 
 
-def _action_plain_explanation(action_label: str) -> str:
+def _summary_next_step(decision: DecisionSignalPlan | None) -> str:
+    if decision and decision.watch_conditions:
+        return "；".join(decision.watch_conditions[:2]) + "。"
+    return "继续跟踪成交活跃度、关键价格区间、公告与财务验证、风险读数变化。"
+
+
+def _action_plain_explanation(action_label: str, decision: DecisionSignalPlan | None = None) -> str:
+    if decision:
+        return f"{decision.action}，周期为{decision.horizon}。{decision.reason}"
     if action_label == "买入观察":
         return "纳入买入观察池，适合继续跟踪中期持有条件，重点等待回踩确认或放量突破。"
     if action_label == "风险回避":
@@ -239,6 +269,7 @@ def _render_quant_brief(quant_brief: QuantBrief | None) -> str:
         f"信息完整指数 {quant_brief.evidence_score}/100，"
         f"数据质量 {quant_brief.data_quality_score}/100（{quant_brief.data_quality_grade}）。"
     )
+    decision = _render_decision_signal_block(quant_brief.decision_signal)
     facts = "\n".join(f"{index}. {fact}" for index, fact in enumerate(quant_brief.facts, start=1))
     quality_checks = "\n".join(
         f"{index}. {item.label}：{item.detail}"
@@ -263,12 +294,32 @@ def _render_quant_brief(quant_brief: QuantBrief | None) -> str:
     )
     return (
         f"{factor_summary}\n\n"
+        f"决策信号：\n{decision}\n\n"
         f"客观事实：\n{facts}\n\n"
         f"事实链：\n{fact_chain or '报告基于已纳入的公开信息展开，后续事件进入持续跟踪。'}\n\n"
         f"横截面因子：\n{cross_section or '横截面强弱作为后续跟踪项，当前结论优先参考已确认的量化信号。'}\n\n"
         f"数据质量校验：\n{quality_checks}\n\n"
         f"量化安全校验：\n{validation or '安全校验会随底稿更新持续执行。'}\n\n"
         f"验证口径：\n{limitations}"
+    )
+
+
+def _render_decision_signal_block(decision: DecisionSignalPlan | None) -> str:
+    if decision is None:
+        return "决策信号将随量化底稿和投委会讨论继续生成。"
+    price_plan = "\n".join(f"- {item}" for item in decision.price_plan)
+    watch = "\n".join(f"- {item}" for item in decision.watch_conditions)
+    invalidation = "\n".join(f"- {item}" for item in decision.invalidation_conditions)
+    catalysts = "\n".join(f"- {item}" for item in decision.catalysts)
+    return (
+        f"动作口径：{decision.action}；周期：{decision.horizon}；阶段：{decision.market_phase}。\n"
+        f"信号分：{decision.score}/100；置信度：{decision.confidence}/100；方案质量：{decision.plan_quality}。\n"
+        f"核心理由：{decision.reason}\n"
+        f"价格计划：\n{price_plan}\n"
+        f"观察条件：\n{watch}\n"
+        f"失效条件：\n{invalidation}\n"
+        f"催化线索：\n{catalysts}\n"
+        f"数据摘要：{decision.data_quality_summary}"
     )
 
 
@@ -307,6 +358,17 @@ def _render_risk_boundary(
     risk_points: list[str],
     snapshot: MarketSnapshot,
 ) -> str:
+    decision = quant_brief.decision_signal if quant_brief else None
+    if decision:
+        risk_controls = "\n".join(f"{index}. {item}" for index, item in enumerate(decision.risk_controls, start=1))
+        invalidation = "\n".join(
+            f"{index}. {item}" for index, item in enumerate(decision.invalidation_conditions, start=1)
+        )
+        return (
+            f"风险边界来自决策信号：{decision.action}，阶段为{decision.market_phase}。\n"
+            f"风险控制：\n{risk_controls}\n"
+            f"失效条件：\n{invalidation}"
+        )
     if quant_brief:
         risk_level = (
             "高风险"
@@ -381,8 +443,10 @@ def _render_key_judgement(
     risk_points: list[str],
     snapshot: MarketSnapshot,
 ) -> str:
+    decision = quant_brief.decision_signal if quant_brief else None
     quant_line = (
-        f"量化模型给出 {quant_brief.signal_label}，信息完整指数 {quant_brief.evidence_score}/100，"
+        f"量化模型给出 {quant_brief.signal_label}，决策信号为 {decision.action if decision else '待收敛'}，"
+        f"信息完整指数 {quant_brief.evidence_score}/100，"
         f"数据质量 {quant_brief.data_quality_score}/100，风险约束 {quant_brief.risk_score}/100。"
         if quant_brief
         else "量化底稿正在整理，当前先保留已确认行情事实与会议讨论输入。"
@@ -408,6 +472,26 @@ def _render_research_recommendation(
     rating: str,
     snapshot: MarketSnapshot,
 ) -> str:
+    decision = quant_brief.decision_signal if quant_brief else None
+    if decision:
+        price_plan = "\n".join(f"{index}. {item}" for index, item in enumerate(decision.price_plan, start=1))
+        watch = "\n".join(f"{index}. {item}" for index, item in enumerate(decision.watch_conditions, start=1))
+        invalidation = "\n".join(
+            f"{index}. {item}" for index, item in enumerate(decision.invalidation_conditions, start=1)
+        )
+        risk_controls = "\n".join(f"{index}. {item}" for index, item in enumerate(decision.risk_controls, start=1))
+        catalysts = "\n".join(f"{index}. {item}" for index, item in enumerate(decision.catalysts, start=1))
+        return (
+            f"明确口径：{decision.action}，观察周期为{decision.horizon}。\n"
+            f"核心理由：{decision.reason}\n"
+            f"价格计划：\n{price_plan}\n"
+            f"跟踪条件：\n{watch}\n"
+            f"失效条件：\n{invalidation}\n"
+            f"催化线索：\n{catalysts}\n"
+            f"风险控制：\n{risk_controls}\n"
+            f"合规边界：以上为研究辅助输出，不构成对 {snapshot.name} 的买卖指令、"
+            "财务建议、投资建议或交易建议。"
+        )
     if action_label == "买入观察":
         action_text = (
             "明确口径：买入观察。研究建议为中期持有型跟踪；已持有可继续持有，"
