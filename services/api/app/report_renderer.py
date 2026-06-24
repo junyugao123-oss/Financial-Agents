@@ -10,6 +10,7 @@ from .models import (
     ResearchReport,
     ReportSection,
     ResearchSession,
+    StrategyMatch,
 )
 
 
@@ -270,6 +271,7 @@ def _render_quant_brief(quant_brief: QuantBrief | None) -> str:
         f"数据质量 {quant_brief.data_quality_score}/100（{quant_brief.data_quality_grade}）。"
     )
     decision = _render_decision_signal_block(quant_brief.decision_signal)
+    strategy_matches = _render_strategy_matches(quant_brief.strategy_matches)
     facts = "\n".join(f"{index}. {fact}" for index, fact in enumerate(quant_brief.facts, start=1))
     quality_checks = "\n".join(
         f"{index}. {item.label}：{item.detail}"
@@ -295,6 +297,7 @@ def _render_quant_brief(quant_brief: QuantBrief | None) -> str:
     return (
         f"{factor_summary}\n\n"
         f"决策信号：\n{decision}\n\n"
+        f"策略匹配：\n{strategy_matches}\n\n"
         f"客观事实：\n{facts}\n\n"
         f"事实链：\n{fact_chain or '报告基于已纳入的公开信息展开，后续事件进入持续跟踪。'}\n\n"
         f"横截面因子：\n{cross_section or '横截面强弱作为后续跟踪项，当前结论优先参考已确认的量化信号。'}\n\n"
@@ -302,6 +305,34 @@ def _render_quant_brief(quant_brief: QuantBrief | None) -> str:
         f"量化安全校验：\n{validation or '安全校验会随底稿更新持续执行。'}\n\n"
         f"验证口径：\n{limitations}"
     )
+
+
+def _render_strategy_matches(matches: list[StrategyMatch]) -> str:
+    if not matches:
+        return "策略库尚未形成可用匹配，报告以已确认量化信号和投委会结论为主。"
+    priority = sorted(
+        matches,
+        key=lambda item: {
+            "match": 0,
+            "watch": 1,
+            "blocked": 2,
+        }.get(item.status, 3),
+    )
+    lines: list[str] = []
+    for index, item in enumerate(priority[:7], start=1):
+        lines.append(
+            f"{index}. {item.name}（{_strategy_status_text(item.status)}，{item.score}/100）："
+            f"{item.detail} 跟踪条件：{item.watch_condition}"
+        )
+    return "\n".join(lines)
+
+
+def _strategy_status_text(status: str) -> str:
+    if status == "match":
+        return "策略命中"
+    if status == "blocked":
+        return "风控否决"
+    return "等待确认"
 
 
 def _render_decision_signal_block(decision: DecisionSignalPlan | None) -> str:

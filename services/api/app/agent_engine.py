@@ -568,6 +568,7 @@ def _committee_evidence_digest(quant_brief: QuantBrief | None) -> str:
             f"数据质量 {quant_brief.data_quality_score}/100。"
         ),
         f"关键因子：{_indicator_digest(quant_brief, _core_indicator_keys())}",
+        f"策略匹配：{_strategy_digest(quant_brief)}",
         f"事实链：{_fact_digest(quant_brief, limit=5)}",
         f"证据账本：{_ledger_digest(quant_brief)}",
         f"数据质量：{_quality_digest(quant_brief)}",
@@ -595,6 +596,8 @@ def _role_evidence_digest(
         ),
         f"本角色重点因子：{_indicator_digest(quant_brief, role_keys)}",
     ]
+    if role in {"量化研究员", "技术分析师", "基本面分析师", "多头研究员", "空头研究员", "风控负责人", "组合经理", "报告编辑"}:
+        parts.append(f"策略信号：{_strategy_digest(quant_brief, _role_strategy_categories(role))}")
     if role in {"数据助理", "首席策略官", "风控负责人", "报告编辑"}:
         parts.append(f"数据与校验：{_quality_digest(quant_brief)}")
     if quant_brief.evidence_ledger:
@@ -779,6 +782,54 @@ def _core_indicator_keys() -> tuple[str, ...]:
         "atr",
         "drawdown_60",
     )
+
+
+def _role_strategy_categories(role: str) -> set[str]:
+    mapping: dict[str, set[str]] = {
+        "首席策略官": {"趋势", "量价", "基本面", "事件", "风控"},
+        "量化研究员": {"趋势", "量价", "回撤", "箱体"},
+        "技术分析师": {"趋势", "量价", "回撤", "箱体"},
+        "基本面分析师": {"基本面", "事件"},
+        "多头研究员": {"趋势", "量价", "回撤", "基本面", "事件"},
+        "空头研究员": {"风控", "箱体", "基本面", "事件"},
+        "风控负责人": {"风控", "回撤", "箱体"},
+        "组合经理": {"趋势", "量价", "基本面", "事件", "风控"},
+        "报告编辑": {"趋势", "量价", "基本面", "事件", "风控"},
+    }
+    return mapping.get(role, set())
+
+
+def _strategy_digest(quant_brief: QuantBrief, categories: set[str] | None = None) -> str:
+    matches = quant_brief.strategy_matches or []
+    if categories:
+        matches = [item for item in matches if item.category in categories]
+    if not matches:
+        return "策略库尚未形成明确匹配，发言必须回到已确认因子和风险边界"
+    priority = sorted(
+        matches,
+        key=lambda item: {
+            "blocked": 0,
+            "match": 1,
+            "watch": 2,
+        }.get(item.status, 3),
+    )
+    pieces: list[str] = []
+    for item in priority[:4]:
+        detail = item.detail.strip()
+        if len(detail) > 52:
+            detail = f"{detail[:52]}..."
+        pieces.append(
+            f"{item.name}{item.score}/100（{_strategy_status_text(item.status)}，{detail}）"
+        )
+    return "；".join(pieces)
+
+
+def _strategy_status_text(status: str) -> str:
+    return {
+        "match": "策略命中",
+        "watch": "等待确认",
+        "blocked": "风控否决",
+    }.get(status, "等待确认")
 
 
 def _indicator_digest(quant_brief: QuantBrief, keys: tuple[str, ...]) -> str:

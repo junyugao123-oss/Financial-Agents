@@ -124,6 +124,13 @@ def test_build_quant_brief_from_history():
     assert all(0 <= item.confidence <= 100 for item in brief.factor_results)
     assert all(item.evidence_keys for item in brief.factor_results)
     assert len({item.score for item in brief.factor_results if item.available}) > 4
+    assert brief.strategy_matches
+    assert {item.status for item in brief.strategy_matches} <= {"match", "watch", "blocked"}
+    assert all(item.evidence_keys for item in brief.strategy_matches)
+    assert any(
+        item.key in {"ma_trend_extension", "volume_breakout", "shrink_pullback", "risk_veto"}
+        for item in brief.strategy_matches
+    )
     ledger_statuses = {item.status for item in brief.evidence_ledger}
     assert ledger_statuses <= {"available", "partial", "missing", "blocked"}
     assert brief.facts
@@ -132,6 +139,7 @@ def test_build_quant_brief_from_history():
     assert any("可信数据层" in fact for fact in brief.facts)
     assert any("证据账本" in fact for fact in brief.facts)
     assert any("因子底稿" in fact for fact in brief.facts)
+    assert any("策略匹配" in fact for fact in brief.facts)
     assert brief.validation_checks
     assert brief.decision_signal is not None
     assert brief.decision_signal.action in {"买入观察", "持有观察", "观望观察", "减仓观察", "风险回避"}
@@ -272,6 +280,8 @@ def test_build_quant_brief_includes_fundamental_and_event_factor_layer():
     assert event_factor.available
     assert "financial_statement" in financial_factor.evidence_keys
     assert "announcement_events" in event_factor.evidence_keys
+    assert any(item.key == "growth_quality" for item in brief.strategy_matches)
+    assert any(item.key == "event_repricing" for item in brief.strategy_matches)
     assert any("财报因子" in fact for fact in brief.facts)
     assert any("事件因子" in fact for fact in brief.facts)
     visible_text = "\n".join(

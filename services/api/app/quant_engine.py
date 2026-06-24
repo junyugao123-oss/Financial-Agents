@@ -20,6 +20,7 @@ from .models import (
     MarketSnapshot,
     QuantBrief,
     QuantIndicator,
+    StrategyMatch,
     ValidationCheck,
 )
 from .quant_validation import run_quant_validation_suite, validation_score
@@ -437,6 +438,38 @@ def build_quant_brief(
         data_quality_checks=data_quality_checks,
         validation_checks=audit_checks,
     )
+    strategy_matches = _build_strategy_matches(
+        data_as_of=data_as_of,
+        factor_results=factor_results,
+        indicators=indicators,
+        validation_checks=audit_checks,
+        trend_score=trend_score,
+        momentum_score=momentum_score,
+        volume_score=volume_score,
+        volatility_score=volatility_score,
+        risk_score=risk_score,
+        evidence_score=evidence_score,
+        data_quality_score=data_quality_score,
+        latest_price=latest_price,
+        ma20=ma20_value,
+        ma60=ma60_value,
+        ma20_gap=ma20_gap,
+        ma60_gap=ma60_gap,
+        ma20_slope=ma20_slope,
+        ma60_slope=ma60_slope,
+        macd_hist=macd_hist,
+        adx=adx_value,
+        di_plus=di_plus,
+        di_minus=di_minus,
+        rsi=rsi_value,
+        roc=roc_value,
+        price_position_120=price_position_120,
+        breakout_distance_60=breakout_distance_60,
+        rps_proxy=rps_proxy,
+        volume_ratio=volume_ratio,
+        obv_slope=obv_slope,
+        boll_width=boll_width,
+    )
     decision_signal = _build_decision_signal_plan(
         signal_label=signal_label,
         trend_score=trend_score,
@@ -448,6 +481,7 @@ def build_quant_brief(
         data_quality_score=data_quality_score,
         validation_checks=audit_checks,
         factor_results=factor_results,
+        strategy_matches=strategy_matches,
         data_quality_checks=data_quality_checks,
         latest_price=latest_price,
         ma20=ma20_value,
@@ -466,6 +500,7 @@ def build_quant_brief(
             f"因子底稿：{sum(1 for item in factor_results if item.available)}/{len(factor_results)} "
             "项因子完成量化计算；每项均绑定证据账本和质量校验。"
         ),
+        f"策略匹配：{_strategy_match_fact_line(strategy_matches)}",
         (
             f"决策信号：{decision_signal.action}，周期 {decision_signal.horizon}，"
             f"信号分 {decision_signal.score}/100，置信度 {decision_signal.confidence}/100。"
@@ -538,6 +573,7 @@ def build_quant_brief(
         validation_checks=audit_checks,
         indicators=indicators,
         factor_results=factor_results,
+        strategy_matches=strategy_matches,
         facts=facts,
         limitations=[
             "财报、公告、新闻、行业、估值和业绩预测等公开信息进入内部事实链；前台只展示已纳入研究口径的证据。",
@@ -580,6 +616,7 @@ def _build_decision_signal_plan(
     data_quality_score: int,
     validation_checks: list[ValidationCheck],
     factor_results: list[FactorResult],
+    strategy_matches: list[StrategyMatch],
     data_quality_checks: list[DataQualityCheck],
     latest_price: float | None,
     ma20: float | None,
@@ -594,6 +631,8 @@ def _build_decision_signal_plan(
     event_quality = _factor_score(factor_results, "event_quality")
     announcement_risk = _factor_score(factor_results, "announcement_risk")
     factor_validity = _factor_score(factor_results, "factor_validity")
+    strategy_alignment = _strategy_alignment_score(strategy_matches)
+    blocked_strategy = _strategy_blocked(strategy_matches)
 
     strength_inputs = [trend_score, momentum_score, volume_score]
     for optional_score in (relative_strength, financial_quality, event_quality):
@@ -607,6 +646,7 @@ def _build_decision_signal_plan(
         + data_quality_score * 0.14
         + validation * 0.12
         + (100 - min(risk_score, 100)) * 0.12
+        + (strategy_alignment - 50) * 0.12
         - risk_penalty
     )
     confidence = _clamp_score(
@@ -614,11 +654,14 @@ def _build_decision_signal_plan(
         + data_quality_score * 0.28
         + validation * 0.2
         + (100 - min(risk_score, 100)) * 0.18
+        + max(0, strategy_alignment - 55) * 0.08
     )
 
     has_data_blocker = data_quality_score < 45 or evidence_score < 45
     if has_data_blocker:
         action = "观望观察"
+    elif blocked_strategy and signal_score < 65:
+        action = "风险回避"
     elif risk_score >= 88 and trend_score < 68:
         action = "风险回避"
     elif risk_score >= 80 and signal_score < 58:
@@ -629,6 +672,7 @@ def _build_decision_signal_plan(
         and momentum_score >= 54
         and volume_score >= 48
         and risk_score < 78
+        and strategy_alignment >= 54
     ):
         action = "买入观察"
     elif signal_score >= 56 and trend_score >= 52 and risk_score < 84:
@@ -657,6 +701,12 @@ def _build_decision_signal_plan(
         risk_score=risk_score,
         signal_score=signal_score,
     )
+    primary_strategy = _primary_strategy_match(strategy_matches)
+    if primary_strategy is not None:
+        reason = (
+            f"{reason} 主策略：{primary_strategy.name}"
+            f"（{_strategy_status_text(primary_strategy.status)}，{primary_strategy.score}/100）。"
+        )
     price_plan = [
         f"当前参考价 {_fmt(latest_price)}，20日均线 {_fmt(ma20)}，60日均线 {_fmt(ma60)}。",
         f"60日突破距离 {_fmt(breakout_distance_60)}%，ATR14 占比 {_fmt(atr_pct)}%，5/20日量比 {_fmt(volume_ratio)}。",
@@ -673,6 +723,11 @@ def _build_decision_signal_plan(
         "公告、新闻、财务和行业线索是否继续支持当前研究口径。",
         "风险约束、回撤、波动和流动性是否出现恶化。",
     ]
+    watch_conditions.extend(
+        item.watch_condition
+        for item in _top_strategy_matches(strategy_matches, include_blocked=False)[:2]
+        if item.watch_condition
+    )
     invalidation_conditions = [
         "价格跌破核心均线且成交活跃度同步回落。",
         "风险读数继续抬升并伴随下行波动扩大。",
@@ -691,6 +746,11 @@ def _build_decision_signal_plan(
         event_quality=event_quality,
         factor_validity=factor_validity,
     )
+    catalysts.extend(
+        f"{item.name}：{item.detail}"
+        for item in _top_strategy_matches(strategy_matches, include_blocked=False)[:2]
+        if item.status == "match"
+    )
     evidence_keys = [
         item.key
         for item in factor_results
@@ -706,6 +766,12 @@ def _build_decision_signal_plan(
             "trusted_data_factor",
         }
     ]
+    evidence_keys.extend(
+        key
+        for item in _top_strategy_matches(strategy_matches)[:3]
+        for key in item.evidence_keys
+        if key not in evidence_keys
+    )
     data_quality_summary = _decision_quality_summary(data_quality_checks, data_quality_score, validation)
     lifecycle_status = "active" if action in ("买入观察", "持有观察") else "blocked" if action == "风险回避" else "watch"
     return DecisionSignalPlan(
@@ -732,6 +798,365 @@ def _factor_score(factors: list[FactorResult], key: str) -> int | None:
         if item.key == key and item.available:
             return _ledger_score(item.score)
     return None
+
+
+def _factor_confidence(factors: list[FactorResult], key: str) -> int | None:
+    for item in factors:
+        if item.key == key and item.available:
+            return _ledger_score(item.confidence)
+    return None
+
+
+def _build_strategy_matches(
+    *,
+    data_as_of: str,
+    factor_results: list[FactorResult],
+    indicators: list[QuantIndicator],
+    validation_checks: list[ValidationCheck],
+    trend_score: int,
+    momentum_score: int,
+    volume_score: int,
+    volatility_score: int,
+    risk_score: int,
+    evidence_score: int,
+    data_quality_score: int,
+    latest_price: float | None,
+    ma20: float | None,
+    ma60: float | None,
+    ma20_gap: float | None,
+    ma60_gap: float | None,
+    ma20_slope: float | None,
+    ma60_slope: float | None,
+    macd_hist: float | None,
+    adx: float | None,
+    di_plus: float | None,
+    di_minus: float | None,
+    rsi: float | None,
+    roc: float | None,
+    price_position_120: float | None,
+    breakout_distance_60: float | None,
+    rps_proxy: float | None,
+    volume_ratio: float,
+    obv_slope: float | None,
+    boll_width: float | None,
+) -> list[StrategyMatch]:
+    """Translate raw factor readings into user-understandable strategy playbooks.
+
+    The playbook layer follows the daily-stock-analysis idea: a conclusion should
+    be backed by a recognizable strategy context, not just isolated indicators.
+    """
+
+    indicator_by_key = {item.key: item for item in indicators}
+    validation = validation_score(validation_checks) if validation_checks else 0
+    base_confidence = _ledger_score(
+        evidence_score * 0.34
+        + data_quality_score * 0.32
+        + validation * 0.24
+        + max(0, 100 - risk_score) * 0.1
+    )
+
+    matches: list[StrategyMatch] = []
+
+    def add(
+        *,
+        key: str,
+        name: str,
+        category: str,
+        score: float,
+        detail: str,
+        watch_condition: str,
+        evidence_keys: list[str],
+        blocked: bool = False,
+        confidence_bonus: int = 0,
+    ) -> None:
+        final_score = _ledger_score(score)
+        status = "blocked" if blocked else "match" if final_score >= 68 else "watch"
+        confidence = _ledger_score(base_confidence + confidence_bonus - (12 if blocked else 0))
+        matches.append(
+            StrategyMatch(
+                key=key,
+                name=name,
+                category=category,  # type: ignore[arg-type]
+                status=status,
+                score=final_score,
+                confidence=confidence,
+                evidence_keys=evidence_keys,
+                detail=detail,
+                watch_condition=watch_condition,
+            )
+        )
+
+    latest = _number_or_zero(latest_price)
+    ma20_value = _number_or_zero(ma20)
+    ma60_value = _number_or_zero(ma60)
+    ma20_gap_value = _number_or_zero(ma20_gap)
+    ma60_gap_value = _number_or_zero(ma60_gap)
+    ma20_slope_value = _number_or_zero(ma20_slope)
+    ma60_slope_value = _number_or_zero(ma60_slope)
+    macd_hist_value = _number_or_zero(macd_hist)
+    adx_value = _number_or_zero(adx)
+    di_plus_value = _number_or_zero(di_plus)
+    di_minus_value = _number_or_zero(di_minus)
+    rsi_value = _number_or_zero(rsi)
+    roc_value = _number_or_zero(roc)
+    price_position = _number_or_zero(price_position_120)
+    breakout = _number_or_zero(breakout_distance_60)
+    rps_value = _number_or_zero(rps_proxy)
+    obv_slope_value = _number_or_zero(obv_slope)
+    boll_width_value = _number_or_zero(boll_width)
+
+    trend_extension_score = 24
+    if latest and ma20_value and ma60_value and latest >= ma20_value >= ma60_value:
+        trend_extension_score += 24
+    elif latest and ma20_value and latest >= ma20_value:
+        trend_extension_score += 14
+    if ma20_slope_value > 0:
+        trend_extension_score += 12
+    if ma60_slope_value >= 0:
+        trend_extension_score += 8
+    if macd_hist_value > 0:
+        trend_extension_score += 14
+    if adx_value >= 20 and di_plus_value > di_minus_value:
+        trend_extension_score += 14
+    if rps_value >= 65:
+        trend_extension_score += 8
+    add(
+        key="ma_trend_extension",
+        name="均线趋势延续",
+        category="趋势",
+        score=trend_extension_score,
+        detail=(
+            f"价格相对 20 日均线 {_fmt(ma20_gap)}%，相对 60 日均线 {_fmt(ma60_gap)}%，"
+            f"MACD 柱 {_fmt(macd_hist)}，趋势强度 {_fmt(adx)}。"
+        ),
+        watch_condition="价格继续站稳 20 日均线，MACD 柱不转负，趋势强度保持扩张。",
+        evidence_keys=["trend_factor", "momentum_factor", "relative_strength"],
+        blocked=latest < ma60_value and ma20_slope_value < 0 and macd_hist_value < 0,
+        confidence_bonus=4,
+    )
+
+    volume_breakout_score = 22
+    if breakout >= 0:
+        volume_breakout_score += 24
+    elif breakout >= -3:
+        volume_breakout_score += 12
+    if volume_ratio >= 1.15:
+        volume_breakout_score += 18
+    elif volume_ratio >= 0.95:
+        volume_breakout_score += 8
+    if obv_slope_value > 0:
+        volume_breakout_score += 14
+    if price_position >= 70:
+        volume_breakout_score += 12
+    if risk_score < 78:
+        volume_breakout_score += 10
+    add(
+        key="volume_breakout",
+        name="放量突破验证",
+        category="量价",
+        score=volume_breakout_score,
+        detail=(
+            f"60 日突破距离 {_fmt(breakout_distance_60)}%，5/20 日量比 {_fmt(volume_ratio)}，"
+            f"OBV 斜率 {_fmt(obv_slope)}，120 日价格位置 {_fmt(price_position_120)}。"
+        ),
+        watch_condition="突破区域需要成交量继续放大，并且回落时不跌回核心区间。",
+        evidence_keys=["volume_price_factor", "trend_factor", "risk_factor"],
+        blocked=breakout < -8 or volume_ratio < 0.55,
+    )
+
+    shrink_pullback_score = 20
+    if -4 <= ma20_gap_value <= 2.5:
+        shrink_pullback_score += 24
+    if ma60_gap_value >= -6:
+        shrink_pullback_score += 8
+    if 0.45 <= volume_ratio <= 0.95:
+        shrink_pullback_score += 20
+    if trend_score >= 55:
+        shrink_pullback_score += 14
+    if risk_score < 76:
+        shrink_pullback_score += 12
+    add(
+        key="shrink_pullback",
+        name="缩量回踩观察",
+        category="回撤",
+        score=shrink_pullback_score,
+        detail=(
+            f"20 日均线偏离 {_fmt(ma20_gap)}%，60 日均线偏离 {_fmt(ma60_gap)}%，"
+            f"量比 {_fmt(volume_ratio)}，风险约束 {risk_score}/100。"
+        ),
+        watch_condition="回踩时成交继续收缩，价格不有效跌破核心均线。",
+        evidence_keys=["trend_factor", "volume_price_factor", "risk_factor"],
+        blocked=ma20_gap_value < -8 or risk_score >= 88,
+    )
+
+    box_score = 24
+    if 35 <= price_position <= 68:
+        box_score += 22
+    if boll_width_value and boll_width_value <= 10:
+        box_score += 14
+    if adx_value and adx_value < 25:
+        box_score += 14
+    if 0.75 <= volume_ratio <= 1.25:
+        box_score += 10
+    if risk_score < 72:
+        box_score += 10
+    add(
+        key="box_oscillation",
+        name="箱体震荡收敛",
+        category="箱体",
+        score=box_score,
+        detail=(
+            f"120 日价格位置 {_fmt(price_position_120)}，布林带宽度 {_fmt(boll_width)}，"
+            f"趋势强度 {_fmt(adx)}，量比 {_fmt(volume_ratio)}。"
+        ),
+        watch_condition="等待箱体上沿突破或下沿失守，确认方向再提升研究权重。",
+        evidence_keys=["volatility_factor", "volume_price_factor", "trend_factor"],
+        blocked=breakout > 5 or price_position > 84,
+    )
+
+    financial_quality = _factor_score(factor_results, "financial_quality")
+    valuation_score = _numeric_indicator_score(indicator_by_key.get("fund_valuation_percentile"))
+    growth_score = _numeric_indicator_score(indicator_by_key.get("fund_growth_quality"))
+    profitability_score = _numeric_indicator_score(indicator_by_key.get("fund_profitability_quality"))
+    financial_score = _safe_average(
+        [item for item in (financial_quality, valuation_score, growth_score, profitability_score) if item is not None]
+    )
+    if financial_score:
+        add(
+            key="growth_quality",
+            name="财务质量承接",
+            category="基本面",
+            score=financial_score,
+            detail=(
+                f"财务质量 {financial_quality if financial_quality is not None else '待补'}，"
+                f"成长质量 {growth_score if growth_score is not None else '待补'}，"
+                f"盈利质量 {profitability_score if profitability_score is not None else '待补'}，"
+                f"估值分位 {valuation_score if valuation_score is not None else '待补'}。"
+            ),
+            watch_condition="后续重点复核营收、利润、现金流、ROE 与估值分位是否继续承接。",
+            evidence_keys=["financial_quality", "fund_valuation_percentile"],
+            blocked=financial_score < 35,
+            confidence_bonus=_factor_confidence(factor_results, "financial_quality") or 0,
+        )
+
+    event_quality = _factor_score(factor_results, "event_quality")
+    event_catalyst = _numeric_indicator_score(indicator_by_key.get("event_catalyst_score"))
+    event_sentiment = _numeric_indicator_score(indicator_by_key.get("event_sentiment_score"))
+    announcement_risk = _numeric_indicator_score(indicator_by_key.get("announcement_risk_score"))
+    event_score = _safe_average(
+        [
+            item
+            for item in (
+                event_quality,
+                event_catalyst,
+                event_sentiment,
+                100 - announcement_risk if announcement_risk is not None else None,
+            )
+            if item is not None
+        ]
+    )
+    if event_score:
+        add(
+            key="event_repricing",
+            name="事件再定价线索",
+            category="事件",
+            score=event_score,
+            detail=(
+                f"事件质量 {event_quality if event_quality is not None else '待补'}，"
+                f"催化强度 {event_catalyst if event_catalyst is not None else '待补'}，"
+                f"情绪读数 {event_sentiment if event_sentiment is not None else '待补'}，"
+                f"公告风险 {announcement_risk if announcement_risk is not None else '待补'}。"
+            ),
+            watch_condition="新增公告、新闻或监管事件出现后，重新计算事件再定价方向。",
+            evidence_keys=["event_quality", "announcement_risk"],
+            blocked=(announcement_risk or 0) >= 78,
+            confidence_bonus=_factor_confidence(factor_results, "event_quality") or 0,
+        )
+
+    validation_fail = any(item.status == "fail" for item in validation_checks)
+    risk_veto_score = max(risk_score, announcement_risk or 0, 100 - validation if validation else 0)
+    add(
+        key="risk_veto",
+        name="风控否决闸门",
+        category="风控",
+        score=risk_veto_score,
+        detail=(
+            f"风险约束 {risk_score}/100，公告风险 {announcement_risk if announcement_risk is not None else '待补'}，"
+            f"量化安全校验 {validation}/100，数据口径 {data_quality_score}/100。"
+        ),
+        watch_condition="风险约束、公告风险或未来函数校验出现恶化时，研究结论自动降档。",
+        evidence_keys=["risk_factor", "announcement_risk", "factor_validity", "trusted_data_factor"],
+        blocked=risk_score >= 86 or (announcement_risk or 0) >= 78 or validation_fail,
+        confidence_bonus=6,
+    )
+
+    return sorted(matches, key=lambda item: (item.status == "blocked", -item.score, -item.confidence))
+
+
+def _strategy_alignment_score(matches: list[StrategyMatch]) -> int:
+    actionable = [item.score for item in matches if item.status == "match"]
+    watch = [item.score for item in matches if item.status == "watch"]
+    blocked = [item.score for item in matches if item.status == "blocked"]
+    if actionable:
+        base = sum(actionable[:4]) / min(len(actionable), 4)
+    elif watch:
+        base = sum(watch[:4]) / min(len(watch), 4) * 0.86
+    else:
+        base = 42
+    penalty = min(22, len(blocked) * 7 + max(blocked, default=0) * 0.08)
+    return _ledger_score(base - penalty)
+
+
+def _strategy_blocked(matches: list[StrategyMatch]) -> bool:
+    return any(item.status == "blocked" and item.category == "风控" and item.score >= 82 for item in matches)
+
+
+def _primary_strategy_match(matches: list[StrategyMatch]) -> StrategyMatch | None:
+    candidates = [item for item in matches if item.status != "blocked" and item.category != "风控"]
+    if not candidates:
+        candidates = [item for item in matches if item.category != "风控"]
+    return max(candidates, key=lambda item: (item.score, item.confidence), default=None)
+
+
+def _top_strategy_matches(
+    matches: list[StrategyMatch],
+    *,
+    include_blocked: bool = True,
+) -> list[StrategyMatch]:
+    candidates = matches if include_blocked else [item for item in matches if item.status != "blocked"]
+    return sorted(candidates, key=lambda item: (item.status == "blocked", -item.score, -item.confidence))
+
+
+def _strategy_status_text(status: str) -> str:
+    return {
+        "match": "策略命中",
+        "watch": "等待确认",
+        "blocked": "风控否决",
+    }.get(status, "等待确认")
+
+
+def _strategy_match_fact_line(matches: list[StrategyMatch]) -> str:
+    if not matches:
+        return "策略库尚未形成可用匹配。"
+    top = _top_strategy_matches(matches)[:4]
+    return "；".join(
+        f"{item.name}{item.score}/100（{_strategy_status_text(item.status)}）" for item in top
+    )
+
+
+def _numeric_indicator_score(indicator: QuantIndicator | None) -> int | None:
+    if indicator is None:
+        return None
+    value = _numeric_indicator_value(indicator)
+    if value is None:
+        return None
+    return _ledger_score(value)
+
+
+def _safe_average(values: list[int]) -> int:
+    if not values:
+        return 0
+    return _ledger_score(sum(values) / len(values))
 
 
 def _decision_reason(

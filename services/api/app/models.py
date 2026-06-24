@@ -127,6 +127,18 @@ class FactorResult(BaseModel):
     detail: str = ""
 
 
+class StrategyMatch(BaseModel):
+    key: str
+    name: str
+    category: Literal["趋势", "量价", "回撤", "箱体", "基本面", "事件", "风控"]
+    status: Literal["match", "watch", "blocked"]
+    score: int = Field(ge=0, le=100)
+    confidence: int = Field(ge=0, le=100)
+    evidence_keys: list[str] = Field(default_factory=list)
+    detail: str
+    watch_condition: str
+
+
 class DataQualityCheck(BaseModel):
     key: str
     label: str
@@ -249,6 +261,7 @@ class QuantBrief(BaseModel):
     validation_checks: list[ValidationCheck] = Field(default_factory=list)
     indicators: list[QuantIndicator] = Field(default_factory=list)
     factor_results: list[FactorResult] = Field(default_factory=list)
+    strategy_matches: list[StrategyMatch] = Field(default_factory=list)
     facts: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
 

@@ -109,6 +109,18 @@ export interface FactorResult {
   detail: string;
 }
 
+export interface StrategyMatch {
+  key: string;
+  name: string;
+  category: "趋势" | "量价" | "回撤" | "箱体" | "基本面" | "事件" | "风控";
+  status: "match" | "watch" | "blocked";
+  score: number;
+  confidence: number;
+  evidence_keys: string[];
+  detail: string;
+  watch_condition: string;
+}
+
 export interface DataQualityCheck {
   key: string;
   label: string;
@@ -231,6 +243,7 @@ export interface QuantBrief {
   cross_section: CrossSectionContext | null;
   validation_checks: ValidationCheck[];
   factor_results?: FactorResult[];
+  strategy_matches?: StrategyMatch[];
   limitations: string[];
 }
 
